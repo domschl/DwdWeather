@@ -5,7 +5,11 @@ from pathlib import Path
 from datetime import datetime, timezone
 import threading
 import typing
-from paho.mqtt.enums import CallbackAPIVersion
+try:
+    from paho.mqtt.enums import CallbackAPIVersion
+    has_v2_api = True
+except ImportError:
+    has_v2_api = False
 import paho.mqtt.client as mqtt
 
 logger = logging.getLogger("dwd_server.mqtt")
@@ -69,7 +73,10 @@ class MQTTManager:
 
     def _run(self) -> None:
         logger.info(f"Starting MQTT client, connecting to {self.host}:{self.port}...")
-        self.client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+        if has_v2_api:
+            self.client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2)
+        else:
+            self.client = mqtt.Client()
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         

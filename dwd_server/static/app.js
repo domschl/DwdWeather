@@ -465,7 +465,7 @@ function renderChartAndTable() {
           const rectW = maxTextWidth + padX * 2;
           const rectH = lines.length * lineHeights + padY * 2;
           const rectX = x - rectW / 2;
-          const rectY = topY - rectH - 6;
+          const rectY = topY + 6;
           
           // Draw background capsule for text
           ctx.fillStyle = '#ff2a6d'; // Neon pink background matching theme
