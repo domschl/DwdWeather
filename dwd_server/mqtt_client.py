@@ -112,22 +112,23 @@ class MQTTManager:
             self.last_temp = temp
             self.last_time = now.timestamp()
             
-            # Format slot as "YYYY-MM-DDTHH:00:00Z" (ISO hourly slot)
-            slot = now.replace(minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:00:00.000Z")
+            # Format slot as "YYYY-MM-DDTHH:MM:00.000Z" (ISO 10-minute slot)
+            minute_slot = (now.minute // 10) * 10
+            slot = now.replace(minute=minute_slot, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:00.000Z")
             
             # Record raw reading
             if slot not in self._raw_hourly:
                 self._raw_hourly[slot] = []
             self._raw_hourly[slot].append(temp)
             
-            # Downsample: Average the hourly slot readings
+            # Downsample: Average the 10-minute slot readings
             self.history[slot] = sum(self._raw_hourly[slot]) / len(self._raw_hourly[slot])
             
-            # Limit history to 48 slots (48 hours)
-            if len(self.history) > 48:
+            # Limit history to 288 slots (48 hours of 10-minute intervals)
+            if len(self.history) > 288:
                 # Sort slots and discard oldest
                 sorted_slots = sorted(self.history.keys())
-                while len(self.history) > 48:
+                while len(self.history) > 288:
                     old_slot = sorted_slots.pop(0)
                     self.history.pop(old_slot, None)
                     self._raw_hourly.pop(old_slot, None)

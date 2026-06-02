@@ -277,6 +277,24 @@ function getFilteredData() {
   return result;
 }
 
+function getLocalTempForHour(isoTime, mqttHistory) {
+  const targetDate = new Date(isoTime);
+  let sum = 0;
+  let count = 0;
+  
+  for (const [key, temp] of Object.entries(mqttHistory)) {
+    const slotDate = new Date(key);
+    const diffMs = slotDate - targetDate;
+    // Average all 10-minute slots falling within the hour [0, 59] minutes
+    if (diffMs >= 0 && diffMs < 3600000) {
+      sum += temp;
+      count++;
+    }
+  }
+  
+  return count > 0 ? (sum / count) : null;
+}
+
 function addDataPoint(target, index, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory) {
   target.labels.push(times[index]);
   
@@ -284,9 +302,9 @@ function addDataPoint(target, index, times, ttt, sund1, wwp, drr1, rr1c, mqttHis
   const tempC = ttt[index] !== null ? ttt[index] - 273.15 : null;
   target.temps.push(tempC);
 
-  // Local temperature history from MQTT
+  // Local temperature history from MQTT (average of 10-minute intervals within that hour)
   const isoTime = times[index];
-  const localTemp = (mqttHistory && mqttHistory[isoTime] !== undefined) ? mqttHistory[isoTime] : null;
+  const localTemp = getLocalTempForHour(isoTime, mqttHistory);
   target.localTemps.push(localTemp);
   
   // Convert sunshine duration seconds -> minutes
@@ -398,21 +416,11 @@ function renderChartAndTable() {
       if (closestIdx !== -1) {
         const meta = chart.getDatasetMeta(0);
         if (meta && meta.data[closestIdx]) {
-          const x = meta.data[closestIdx].x;
           const ctx = chart.ctx;
           const topY = chart.chartArea.top;
           const bottomY = chart.chartArea.bottom;
           
-          ctx.save();
-          ctx.beginPath();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 5]); // Dashed line pattern
-          ctx.moveTo(x, topY);
-          ctx.lineTo(x, bottomY);
-          ctx.stroke();
-          
-          // Linear interpolation for forecast temp at current time
+          // Find adjacent forecast points bracketing "now"
           let interpolatedTemp = null;
           let idx1 = -1;
           let idx2 = -1;
@@ -425,19 +433,38 @@ function renderChartAndTable() {
               break;
             }
           }
-          if (idx1 !== -1 && idx2 !== -1) {
+          
+          // Interpolate exact vertical line X coordinate and forecast temp
+          let x = null;
+          if (idx1 !== -1 && idx2 !== -1 && meta.data[idx1] && meta.data[idx2]) {
+            const x1 = meta.data[idx1].x;
+            const x2 = meta.data[idx2].x;
             const d1 = new Date(data.labels[idx1]);
             const d2 = new Date(data.labels[idx2]);
+            const weight = (now - d1) / (d2 - d1);
+            x = x1 + weight * (x2 - x1);
+            
             const t1 = data.temps[idx1];
             const t2 = data.temps[idx2];
             if (t1 !== null && t2 !== null) {
-              const weight = (now - d1) / (d2 - d1);
               interpolatedTemp = t1 + weight * (t2 - t1);
             }
+          } else {
+            x = meta.data[closestIdx].x;
           }
+          
           if (interpolatedTemp === null) {
             interpolatedTemp = data.temps[closestIdx];
           }
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 5]); // Dashed line pattern
+          ctx.moveTo(x, topY);
+          ctx.lineTo(x, bottomY);
+          ctx.stroke();
 
           // Format multi-line capsule text
           const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
