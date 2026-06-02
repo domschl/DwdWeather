@@ -13,23 +13,24 @@ def load_config() -> AppConfig:
     # 1. Start with defaults
     config = AppConfig()
 
-    # 2. Check if a local config.json exists
-    config_path = Path("config.json")
-    if config_path.is_file():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                # Overwrite config values with json values
-                if "station_id" in data:
-                    config.station_id = str(data["station_id"])
-                if "cache_expiry_secs" in data:
-                    config.cache_expiry_secs = int(data["cache_expiry_secs"])
-                if "port" in data:
-                    config.port = int(data["port"])
-                if "host" in data:
-                    config.host = str(data["host"])
-        except Exception as e:
-            print(f"Warning: Failed to load config.json: {e}")
+    # 2. Check configuration file locations
+    config_paths = [Path("/etc/dwdweather/config.json"), Path("config.json")]
+    for path in config_paths:
+        if path.is_file():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    # Overwrite config values with json values
+                    if "station_id" in data:
+                        config.station_id = str(data["station_id"])
+                    if "cache_expiry_secs" in data:
+                        config.cache_expiry_secs = int(data["cache_expiry_secs"])
+                    if "port" in data:
+                        config.port = int(data["port"])
+                    if "host" in data:
+                        config.host = str(data["host"])
+            except Exception as e:
+                print(f"Warning: Failed to load config from {path}: {e}")
 
     # 3. Check environment variables (which take highest precedence)
     station_env = os.environ.get("DWD_STATION_ID")

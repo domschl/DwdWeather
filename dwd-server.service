@@ -1,0 +1,19 @@
+[Unit]
+Description=Modern DWD Weather Server and Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=dwdweather
+Group=dwdweather
+DynamicUser=yes
+StateDirectory=dwdweather
+WorkingDirectory=/var/lib/dwdweather
+ExecStart=/usr/bin/dwd-server
+Restart=on-failure
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/dwdweather
+
+[Install]
+WantedBy=multi-user.target
