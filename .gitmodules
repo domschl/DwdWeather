@@ -1,0 +1,3 @@
+[submodule "OldVersion"]
+	path = OldVersion
+	url = git@github.com:domschl/python-dwd-forecast

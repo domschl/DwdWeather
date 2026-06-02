@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DWD Weather Hub - Modern Forecast Dashboard</title>
+  <meta name="description" content="A modernized, highly interactive weather forecast dashboard querying Deutscher Wetterdienst (DWD) MOSMIX data on demand.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header Section -->
+    <header class="app-header">
+      <div class="header-main">
+        <h1 id="main-title">DWD Weather Hub</h1>
+        <div class="station-badge">
+          <span class="station-icon">📍</span>
+          <span id="station-info-display">Loading station...</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="cache-status-container">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="cache-status-text">Checking cache...</span>
+        </div>
+        <button id="btn-refresh" class="btn btn-primary" onclick="triggerRefresh()">
+          <span class="btn-icon">🔄</span> Refresh Forecast
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid Dashboard -->
+    <main class="dashboard-grid">
+      
+      <!-- Metadata and Overview Cards -->
+      <section class="overview-section">
+        
+        <!-- Station Details Card -->
+        <div class="glass-card meta-card" id="card-meta">
+          <h3>Station details</h3>
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Station ID</span>
+              <span class="meta-value" id="meta-station-id">-</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Station Name</span>
+              <span class="meta-value" id="meta-station-name">-</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Coordinates</span>
+              <span class="meta-value" id="meta-coordinates">-</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Elevation</span>
+              <span class="meta-value" id="meta-elevation">-</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Weather Card: Temperature -->
+        <div class="glass-card stat-card temp-theme" id="card-temp">
+          <div class="card-icon">🌡️</div>
+          <div class="card-content">
+            <h4>Temperature Forecast</h4>
+            <div class="stat-main">
+              <span id="current-temp">--.-</span><span class="unit">°C</span>
+            </div>
+            <div class="stat-footer" id="temp-range">
+              Min: --.-°C | Max: --.-°C
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Weather Card: Sunshine -->
+        <div class="glass-card stat-card sun-theme" id="card-sun">
+          <div class="card-icon">☀️</div>
+          <div class="card-content">
+            <h4>Sun & Clear Skies</h4>
+            <div class="stat-main">
+              <span id="sun-duration">--</span><span class="unit"> min/h</span>
+            </div>
+            <div class="stat-footer" id="sun-summary">
+              Next 48h sunshine duration
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Weather Card: Precipitation -->
+        <div class="glass-card stat-card rain-theme" id="card-rain">
+          <div class="card-icon">🌧️</div>
+          <div class="card-content">
+            <h4>Precipitation Risk</h4>
+            <div class="stat-main">
+              <span id="rain-probability">--</span><span class="unit">%</span>
+            </div>
+            <div class="stat-footer" id="rain-summary">
+              Max probability in near term
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Chart and Visualizations -->
+      <section class="chart-section glass-card" id="card-chart-container">
+        <div class="chart-header">
+          <h2>Forecast Timeline</h2>
+          <div class="tab-controls" id="view-mode-tabs">
+            <button id="btn-tab-near" class="tab-btn active" onclick="switchViewMode('near')">
+              48h Detailed (Hourly)
+            </button>
+            <button id="btn-tab-extended" class="tab-btn" onclick="switchViewMode('extended')">
+              10-Day Outlook (6h resolution)
+            </button>
+          </div>
+        </div>
+
+        <!-- Chart Area -->
+        <div class="chart-wrapper">
+          <canvas id="weatherChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Table View -->
+      <section class="table-section glass-card" id="card-table-container">
+        <div class="table-header">
+          <h2>Detailed Forecast Data</h2>
+          <span class="table-subtitle" id="table-row-count">Showing 0 steps</span>
+        </div>
+        <div class="table-wrapper">
+          <table id="forecast-data-table">
+            <thead>
+              <tr>
+                <th>Time (Local)</th>
+                <th>Temperature (°C)</th>
+                <th>Precipitation Prob (%)</th>
+                <th>Precipitation Dur (min)</th>
+                <th>Precipitation Amt (mm)</th>
+                <th>Sunshine Dur (min)</th>
+              </tr>
+            </thead>
+            <tbody id="forecast-table-body">
+              <tr>
+                <td colspan="6" class="table-placeholder">Loading forecast data table...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>Data provided by Deutscher Wetterdienst (DWD) Open Data Portal. Refreshed on demand.</p>
+      <p id="data-issue-time">Forecast Issue Time: -</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
