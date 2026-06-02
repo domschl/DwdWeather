@@ -452,9 +452,9 @@ function renderChartAndTable() {
           
           // Draw multi-line indicator box
           ctx.font = '600 10px Outfit';
-          const lineHeights = 13;
+          const lineHeights = 15;
           const padX = 10;
-          const padY = 6;
+          const padY = 8;
           
           let maxTextWidth = 0;
           lines.forEach(l => {
@@ -467,11 +467,16 @@ function renderChartAndTable() {
           const rectX = x - rectW / 2;
           const rectY = topY + 6;
           
-          // Draw background capsule for text
-          ctx.fillStyle = '#ff2a6d'; // Neon pink background matching theme
+          // Draw background capsule for text (transparent gray)
+          ctx.fillStyle = 'rgba(22, 24, 38, 0.85)';
           ctx.beginPath();
           ctx.roundRect(rectX, rectY, rectW, rectH, 6);
           ctx.fill();
+          
+          // Add a subtle border outline
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
           
           // Draw text lines
           ctx.fillStyle = '#ffffff';
