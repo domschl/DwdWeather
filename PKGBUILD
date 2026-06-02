@@ -36,6 +36,6 @@ package() {
 EOF
 
   # Install license file
-  install -Dm644 OldVersion/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 # vim:set ts=2 sw=2 et:
