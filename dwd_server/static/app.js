@@ -405,21 +405,25 @@ function renderChartAndTable() {
           ctx.lineTo(x, bottomY);
           ctx.stroke();
           
-          // Draw "NOW" indicator box at the top
-          ctx.font = 'bold 9px Outfit';
-          const text = 'NOW';
+          // Get values for text (time and temp)
+          const isoTime = data.labels[closestIdx];
+          const temp = data.temps[closestIdx];
+          const timeStr = formatHour(isoTime);
+          const text = temp !== null ? `${timeStr} (${temp.toFixed(1)}°C)` : timeStr;
+          
+          // Draw indicator box at the top
+          ctx.font = '600 10px Outfit';
           const textWidth = ctx.measureText(text).width;
-          const padX = 6;
-          const padY = 3;
+          const padX = 8;
           const rectW = textWidth + padX * 2;
-          const rectH = 15;
+          const rectH = 18;
           const rectX = x - rectW / 2;
-          const rectY = topY - rectH - 2;
+          const rectY = topY - rectH - 4;
           
           // Draw background capsule for text
           ctx.fillStyle = '#ff2a6d'; // Neon pink background matching theme
           ctx.beginPath();
-          ctx.roundRect(rectX, rectY, rectW, rectH, 4);
+          ctx.roundRect(rectX, rectY, rectW, rectH, 6);
           ctx.fill();
           
           // Draw text
