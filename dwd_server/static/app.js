@@ -300,6 +300,25 @@ function switchViewMode(mode) {
 }
 
 // Filters and formats datasets based on the selected view mode
+function getLocalTempForHour(isoTime, mqttHistory) {
+  const targetDate = new Date(isoTime);
+  let sum = 0;
+  let count = 0;
+  
+  for (const [key, temp] of Object.entries(mqttHistory)) {
+    const slotDate = new Date(key);
+    const diffMs = slotDate - targetDate;
+    // Average all 10-minute slots falling within the hour [0, 59] minutes
+    if (diffMs >= 0 && diffMs < 3600000) {
+      sum += temp;
+      count++;
+    }
+  }
+  
+  return count > 0 ? (sum / count) : null;
+}
+
+// Filters and formats datasets based on the selected view mode
 function getFilteredData() {
   if (!weatherData || !weatherData.forecast) return null;
   
@@ -342,73 +361,92 @@ function getFilteredData() {
   
   if (forecastIndices.length === 0) return result;
   
-  const startTime = new Date(times[forecastIndices[0]]).getTime();
-  const endTime = new Date(times[forecastIndices[forecastIndices.length - 1]]).getTime();
-  
-  const uniqueTimesSet = new Set();
-  
-  // Add selected forecast timesteps
-  forecastIndices.forEach(idx => {
-    uniqueTimesSet.add(new Date(times[idx]).getTime());
-  });
-  
-  // Add sensor 10-minute slot times that fall within timeframe
-  Object.keys(mqttHistory).forEach(slotStr => {
-    const slotMs = new Date(slotStr).getTime();
-    if (slotMs >= startTime && slotMs <= endTime) {
-      uniqueTimesSet.add(slotMs);
-    }
-  });
-  
-  // Sort chronologically
-  const sortedTimesMs = Array.from(uniqueTimesSet).sort((a, b) => a - b);
-  
-  // Map forecast data by timestamp epoch for quick lookup
-  const forecastMap = new Map();
-  forecastIndices.forEach(idx => {
-    const ms = new Date(times[idx]).getTime();
-    forecastMap.set(ms, {
-      temp: ttt[idx] !== null ? ttt[idx] - 273.15 : null,
-      sun: sund1[idx] !== null ? sund1[idx] / 60 : null,
-      prob: wwp[idx],
-      dur: drr1[idx] !== null ? drr1[idx] / 60 : null,
-      amt: rr1c[idx]
+  if (currentViewMode === 'near') {
+    // 1. Time scale: Merge forecast and 10-minute sensor timestamps
+    const startTime = new Date(times[forecastIndices[0]]).getTime();
+    const endTime = new Date(times[forecastIndices[forecastIndices.length - 1]]).getTime();
+    
+    const uniqueTimesSet = new Set();
+    forecastIndices.forEach(idx => {
+      uniqueTimesSet.add(new Date(times[idx]).getTime());
     });
-  });
-  
-  // Map sensor data by timestamp epoch
-  const sensorMap = new Map();
-  Object.entries(mqttHistory).forEach(([slotStr, temp]) => {
-    const ms = new Date(slotStr).getTime();
-    sensorMap.set(ms, temp);
-  });
-  
-  // Populate result lists for each unique timestep
-  sortedTimesMs.forEach(ms => {
-    const isoStr = new Date(ms).toISOString();
-    result.labels.push(isoStr);
     
-    if (forecastMap.has(ms)) {
-      const fcVal = forecastMap.get(ms);
-      result.temps.push(fcVal.temp);
-      result.sunDuration.push(fcVal.sun);
-      result.rainProb.push(fcVal.prob);
-      result.rainDuration.push(fcVal.dur);
-      result.rainAmount.push(fcVal.amt);
-    } else {
-      result.temps.push(null);
-      result.sunDuration.push(null);
-      result.rainProb.push(null);
-      result.rainDuration.push(null);
-      result.rainAmount.push(null);
-    }
+    Object.keys(mqttHistory).forEach(slotStr => {
+      const slotMs = new Date(slotStr).getTime();
+      if (slotMs >= startTime && slotMs <= endTime) {
+        uniqueTimesSet.add(slotMs);
+      }
+    });
     
-    if (sensorMap.has(ms)) {
-      result.localTemps.push(sensorMap.get(ms));
-    } else {
-      result.localTemps.push(null);
-    }
-  });
+    const sortedTimesMs = Array.from(uniqueTimesSet).sort((a, b) => a - b);
+    
+    const forecastMap = new Map();
+    forecastIndices.forEach(idx => {
+      const ms = new Date(times[idx]).getTime();
+      forecastMap.set(ms, {
+        temp: ttt[idx] !== null ? ttt[idx] - 273.15 : null,
+        sun: sund1[idx] !== null ? sund1[idx] / 60 : null,
+        prob: wwp[idx],
+        dur: drr1[idx] !== null ? drr1[idx] / 60 : null,
+        amt: rr1c[idx]
+      });
+    });
+    
+    const sensorMap = new Map();
+    Object.entries(mqttHistory).forEach(([slotStr, temp]) => {
+      const ms = new Date(slotStr).getTime();
+      sensorMap.set(ms, temp);
+    });
+    
+    sortedTimesMs.forEach(ms => {
+      const isoStr = new Date(ms).toISOString();
+      result.labels.push(isoStr);
+      
+      if (forecastMap.has(ms)) {
+        const fcVal = forecastMap.get(ms);
+        result.temps.push(fcVal.temp);
+        result.sunDuration.push(fcVal.sun);
+        result.rainProb.push(fcVal.prob);
+        result.rainDuration.push(fcVal.dur);
+        result.rainAmount.push(fcVal.amt);
+      } else {
+        result.temps.push(null);
+        result.sunDuration.push(null);
+        result.rainProb.push(null);
+        result.rainDuration.push(null);
+        result.rainAmount.push(null);
+      }
+      
+      if (sensorMap.has(ms)) {
+        result.localTemps.push(sensorMap.get(ms));
+      } else {
+        result.localTemps.push(null);
+      }
+    });
+  } else {
+    // 2. Category scale: Keep exactly the forecast timesteps
+    forecastIndices.forEach(idx => {
+      const isoStr = times[idx];
+      result.labels.push(isoStr);
+      
+      const tempC = ttt[idx] !== null ? ttt[idx] - 273.15 : null;
+      result.temps.push(tempC);
+      
+      const sunMin = sund1[idx] !== null ? sund1[idx] / 60 : null;
+      result.sunDuration.push(sunMin);
+      
+      result.rainProb.push(wwp[idx]);
+      
+      const rainMin = drr1[idx] !== null ? drr1[idx] / 60 : null;
+      result.rainDuration.push(rainMin);
+      
+      result.rainAmount.push(rr1c[idx]);
+      
+      // For local temperatures in extended view, use hourly averaged sensor values for the first 48 hours
+      const localTemp = getLocalTempForHour(isoStr, mqttHistory);
+      result.localTemps.push(localTemp);
+    });
+  }
   
   return result;
 }
@@ -762,7 +800,14 @@ function renderChartAndTable() {
           callbacks: {
             title: function(context) {
               if (context.length > 0) {
-                const date = new Date(context[0].parsed.x);
+                const chartInstance = context[0].chart;
+                let dateVal;
+                if (chartInstance && chartInstance.scales.x && chartInstance.scales.x.type === 'time') {
+                  dateVal = context[0].parsed.x;
+                } else {
+                  dateVal = data.labels[context[0].dataIndex];
+                }
+                const date = new Date(dateVal);
                 return date.toLocaleString('en-GB', {
                   weekday: 'short',
                   day: '2-digit',
@@ -795,14 +840,13 @@ function renderChartAndTable() {
         }
       },
       scales: {
-        x: {
+        x: (currentViewMode === 'near') ? {
           type: 'time',
           time: {
-            unit: currentViewMode === 'near' ? 'hour' : 'day',
-            stepSize: currentViewMode === 'near' ? 6 : 1,
+            unit: 'hour',
+            stepSize: 6,
             displayFormats: {
-              hour: 'EEE HH:mm',
-              day: 'EEE dd MMM'
+              hour: 'EEE HH:mm'
             }
           },
           grid: {
@@ -811,18 +855,30 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
-            maxTicksLimit: currentViewMode === 'near' ? 12 : 20,
+            maxTicksLimit: 12,
             callback: function(value, index, ticks) {
               const date = new Date(value);
-              if (currentViewMode === 'near') {
-                const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
-                const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-                return `${weekday} ${time}`;
-              } else {
-                const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' });
-                const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-                return `${day} ${time}:00`;
-              }
+              const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
+              const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+              return `${weekday} ${time}`;
+            }
+          }
+        } : {
+          type: 'category',
+          grid: {
+            color: 'rgba(255, 255, 255, 0.03)'
+          },
+          ticks: {
+            color: '#8f9cae',
+            font: { family: 'Outfit', size: 10 },
+            maxTicksLimit: 20,
+            callback: function(value, index, ticks) {
+              const labelStr = data.labels[index];
+              if (!labelStr) return '';
+              const date = new Date(labelStr);
+              const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' });
+              const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+              return `${day} ${time}:00`;
             }
           }
         },
