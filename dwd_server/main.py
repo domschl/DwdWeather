@@ -12,6 +12,7 @@ import uvicorn
 
 from dwd_server.config import load_config, AppConfig
 from dwd_server.parser import fetch_and_parse, WeatherForecast
+from dwd_server.mqtt_client import MQTTManager
 
 # Set up logging
 logging.basicConfig(
@@ -21,6 +22,14 @@ logging.basicConfig(
 logger = logging.getLogger("dwd_server.main")
 
 config: AppConfig = load_config()
+
+mqtt_manager: MQTTManager | None = None
+if config.mqtt_host:
+    mqtt_manager = MQTTManager(
+        host=config.mqtt_host,
+        port=config.mqtt_port,
+        topic=config.mqtt_topic
+    )
 
 app = FastAPI(
     title="Modern DWD Weather Hub",
@@ -152,12 +161,15 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
         source = "cache"
         last_updated = cache.last_updated  # type: ignore
 
+    mqtt_data = mqtt_manager.get_data() if mqtt_manager else {"last_measurement": None, "history": {}}
     return {
         "source": source,
         "last_updated": last_updated,
         "next_allowed_update": last_updated + min_rate_limit,
         "cache_expiry_secs": config.cache_expiry_secs,
-        "forecast": result_forecast
+        "forecast": result_forecast,
+        "mqtt_last_measurement": mqtt_data.get("last_measurement"),
+        "mqtt_history": mqtt_data.get("history")
     }
 
 @app.get("/api/forecast")
@@ -188,6 +200,10 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 def run() -> None:
     # Ensure cache directory is ready on startup
     ensure_cache_dir()
+    
+    if mqtt_manager:
+        mqtt_manager.start()
+
     logger.info(f"Starting server with station_id={config.station_id}, cache_expiry_secs={config.cache_expiry_secs}s")
     uvicorn.run("dwd_server.main:app", host=config.host, port=config.port, reload=False)
 

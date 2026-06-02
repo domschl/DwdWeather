@@ -8,6 +8,9 @@ class AppConfig(BaseModel):
     cache_expiry_secs: int = 3600
     port: int = 8089
     host: str = "0.0.0.0"
+    mqtt_host: str | None = "nalanda"
+    mqtt_port: int = 1883
+    mqtt_topic: str = "omu/enviro-master/BME280-1/sensor/temperature"
 
 def load_config() -> AppConfig:
     # 1. Start with defaults
@@ -29,6 +32,13 @@ def load_config() -> AppConfig:
                         config.port = int(data["port"])
                     if "host" in data:
                         config.host = str(data["host"])
+                    if "mqtt_host" in data:
+                        # Allow setting empty/null to disable MQTT
+                        config.mqtt_host = data["mqtt_host"] if data["mqtt_host"] else None
+                    if "mqtt_port" in data:
+                        config.mqtt_port = int(data["mqtt_port"])
+                    if "mqtt_topic" in data:
+                        config.mqtt_topic = str(data["mqtt_topic"])
             except Exception as e:
                 print(f"Warning: Failed to load config from {path}: {e}")
 
@@ -54,6 +64,21 @@ def load_config() -> AppConfig:
     host_env = os.environ.get("DWD_HOST")
     if host_env:
         config.host = host_env
+
+    mqtt_host_env = os.environ.get("DWD_MQTT_HOST")
+    if mqtt_host_env is not None:
+        config.mqtt_host = mqtt_host_env if mqtt_host_env else None
+
+    mqtt_port_env = os.environ.get("DWD_MQTT_PORT")
+    if mqtt_port_env:
+        try:
+            config.mqtt_port = int(mqtt_port_env)
+        except ValueError:
+            pass
+
+    mqtt_topic_env = os.environ.get("DWD_MQTT_TOPIC")
+    if mqtt_topic_env:
+        config.mqtt_topic = mqtt_topic_env
 
     # 4. Enforce cache_expiry hard limit: at least 1800 seconds
     if config.cache_expiry_secs < 1800:

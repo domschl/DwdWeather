@@ -241,10 +241,12 @@ function getFilteredData() {
   const wwp = fc.elements.wwP || [];
   const drr1 = fc.elements.DRR1 || [];
   const rr1c = fc.elements.RR1c || [];
+  const mqttHistory = weatherData.mqtt_history || {};
   
   const result = {
     labels: [],
     temps: [],
+    localTemps: [],
     sunDuration: [],
     rainProb: [],
     rainDuration: [],
@@ -257,7 +259,7 @@ function getFilteredData() {
     // Show only the first 48 hours (hourly)
     const targetLimit = Math.min(48, limit);
     for (let i = 0; i < targetLimit; i++) {
-      addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c);
+      addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
     }
   } else {
     // Extended Outlook: displays near-term forecasts in higher time-resolution than longer term forecasts!
@@ -265,9 +267,9 @@ function getFilteredData() {
     // Longer term (after 48 hours): downsampled to 6-hour resolution (indices where (i - 48) % 6 == 0)
     for (let i = 0; i < limit; i++) {
       if (i < 48) {
-        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c);
+        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
       } else if ((i - 48) % 6 === 0) {
-        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c);
+        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
       }
     }
   }
@@ -275,12 +277,17 @@ function getFilteredData() {
   return result;
 }
 
-function addDataPoint(target, index, times, ttt, sund1, wwp, drr1, rr1c) {
+function addDataPoint(target, index, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory) {
   target.labels.push(times[index]);
   
   // Convert temperature Kelvin -> Celsius
   const tempC = ttt[index] !== null ? ttt[index] - 273.15 : null;
   target.temps.push(tempC);
+
+  // Local temperature history from MQTT
+  const isoTime = times[index];
+  const localTemp = (mqttHistory && mqttHistory[isoTime] !== undefined) ? mqttHistory[isoTime] : null;
+  target.localTemps.push(localTemp);
   
   // Convert sunshine duration seconds -> minutes
   const sunMin = sund1[index] !== null ? sund1[index] / 60 : null;
@@ -405,20 +412,60 @@ function renderChartAndTable() {
           ctx.lineTo(x, bottomY);
           ctx.stroke();
           
-          // Get values for text (time and temp)
-          const isoTime = data.labels[closestIdx];
-          const temp = data.temps[closestIdx];
-          const timeStr = formatHour(isoTime);
-          const text = temp !== null ? `${timeStr} (${temp.toFixed(1)}°C)` : timeStr;
+          // Linear interpolation for forecast temp at current time
+          let interpolatedTemp = null;
+          let idx1 = -1;
+          let idx2 = -1;
+          for (let i = 0; i < data.labels.length - 1; i++) {
+            const d1 = new Date(data.labels[i]);
+            const d2 = new Date(data.labels[i+1]);
+            if (now >= d1 && now <= d2) {
+              idx1 = i;
+              idx2 = i + 1;
+              break;
+            }
+          }
+          if (idx1 !== -1 && idx2 !== -1) {
+            const d1 = new Date(data.labels[idx1]);
+            const d2 = new Date(data.labels[idx2]);
+            const t1 = data.temps[idx1];
+            const t2 = data.temps[idx2];
+            if (t1 !== null && t2 !== null) {
+              const weight = (now - d1) / (d2 - d1);
+              interpolatedTemp = t1 + weight * (t2 - t1);
+            }
+          }
+          if (interpolatedTemp === null) {
+            interpolatedTemp = data.temps[closestIdx];
+          }
+
+          // Format multi-line capsule text
+          const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+          const lines = [`Now ${timeStr}`];
+          if (interpolatedTemp !== null) {
+            lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
+          }
+          const lastMqtt = weatherData.mqtt_last_measurement;
+          if (lastMqtt && lastMqtt.temp !== null) {
+            lines.push(`Sensor: ${lastMqtt.temp.toFixed(1)}°C`);
+          }
           
-          // Draw indicator box at the top
+          // Draw multi-line indicator box
           ctx.font = '600 10px Outfit';
-          const textWidth = ctx.measureText(text).width;
-          const padX = 8;
-          const rectW = textWidth + padX * 2;
-          const rectH = 18;
+          const lineHeights = 13;
+          const padX = 10;
+          const padY = 6;
+          
+          let maxTextWidth = 0;
+          lines.forEach(l => {
+            const w = ctx.measureText(l).width;
+            if (w > maxTextWidth) maxTextWidth = w;
+          });
+          
+          const rectW = maxTextWidth + padX * 2;
+          const rectH = lines.length * lineHeights + padY * 2;
           const rectX = x - rectW / 2;
-          const rectY = topY - rectH - 4;
+          const rectY = topY - rectH - 6;
           
           // Draw background capsule for text
           ctx.fillStyle = '#ff2a6d'; // Neon pink background matching theme
@@ -426,11 +473,13 @@ function renderChartAndTable() {
           ctx.roundRect(rectX, rectY, rectW, rectH, 6);
           ctx.fill();
           
-          // Draw text
+          // Draw text lines
           ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(text, x, rectY + rectH / 2);
+          ctx.textBaseline = 'top';
+          lines.forEach((line, index) => {
+            ctx.fillText(line, x, rectY + padY + index * lineHeights);
+          });
           
           ctx.restore();
         }
@@ -444,6 +493,20 @@ function renderChartAndTable() {
     data: {
       labels: displayLabels,
       datasets: [
+        {
+          type: 'line',
+          label: 'Local Temp (°C)',
+          data: data.localTemps,
+          borderColor: '#00ff66', // Neon green
+          borderWidth: 2,
+          borderDash: [3, 3], // Dashed line
+          pointRadius: currentViewMode === 'near' ? 2 : 1,
+          pointBackgroundColor: '#00ff66',
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.35,
+          order: 0 // Draw on top
+        },
         {
           type: 'line',
           label: 'Temperature (°C)',
@@ -517,7 +580,7 @@ function renderChartAndTable() {
                 label += ': ';
               }
               if (context.parsed.y !== null) {
-                if (context.dataset.label.includes('Temperature')) {
+                if (context.dataset.label.includes('Temp')) {
                   label += context.parsed.y.toFixed(1) + ' °C';
                 } else if (context.dataset.label.includes('Precipitation')) {
                   label += Math.round(context.parsed.y) + ' %';
