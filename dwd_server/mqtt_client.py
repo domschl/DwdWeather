@@ -15,7 +15,7 @@ import paho.mqtt.client as mqtt
 logger = logging.getLogger("dwd_server.mqtt")
 
 class MQTTManager:
-    def __init__(self, host: str, port: int, topic: str) -> None:
+    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache")) -> None:
         self.host = host
         self.port = port
         self.topic = topic
@@ -27,7 +27,7 @@ class MQTTManager:
         # Maps hour slot to average temperature
         self.history: dict[str, float] = {}
         
-        self.history_file = Path("cache/mqtt_history.json")
+        self.history_file = cache_dir / "mqtt_history.json"
         self.lock = threading.Lock()
         
         self.client: mqtt.Client | None = None
@@ -45,7 +45,7 @@ class MQTTManager:
                 self._raw_hourly = data.get("raw_hourly", {})
                 self.last_temp = data.get("last_temp")
                 self.last_time = data.get("last_time")
-            logger.info(f"Loaded MQTT history with {len(self.history)} hourly slots.")
+            logger.info(f"Loaded MQTT history with {len(self.history)} 10-minute slots.")
         except Exception as e:
             logger.warning(f"Failed to load MQTT history from disk: {e}")
 

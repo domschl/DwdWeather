@@ -21,14 +21,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dwd_server.main")
 
-config: AppConfig = load_config()
+config:AppConfig = load_config()
+
+# Cache structures
+CACHE_DIR = Path(config.cache_dir)
+CACHE_FILE = CACHE_DIR / "weather_cache.json"
 
 mqtt_manager: MQTTManager | None = None
 if config.mqtt_host:
     mqtt_manager = MQTTManager(
         host=config.mqtt_host,
         port=config.mqtt_port,
-        topic=config.mqtt_topic
+        topic=config.mqtt_topic,
+        cache_dir=CACHE_DIR
     )
 
 app = FastAPI(
@@ -45,10 +50,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Cache structures
-CACHE_DIR = Path("cache")
-CACHE_FILE = CACHE_DIR / "weather_cache.json"
 
 class CacheEntry:
     def __init__(self, last_updated: float, forecast: WeatherForecast) -> None:

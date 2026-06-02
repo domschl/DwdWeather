@@ -11,6 +11,7 @@ class AppConfig(BaseModel):
     mqtt_host: str | None = "nalanda"
     mqtt_port: int = 1883
     mqtt_topic: str = "omu/enviro-master/BME280-1/sensor/temperature"
+    cache_dir: str = "cache"
 
 def load_config() -> AppConfig:
     # 1. Start with defaults
@@ -39,6 +40,8 @@ def load_config() -> AppConfig:
                         config.mqtt_port = int(data["mqtt_port"])
                     if "mqtt_topic" in data:
                         config.mqtt_topic = str(data["mqtt_topic"])
+                    if "cache_dir" in data:
+                        config.cache_dir = str(data["cache_dir"])
             except Exception as e:
                 print(f"Warning: Failed to load config from {path}: {e}")
 
@@ -79,6 +82,10 @@ def load_config() -> AppConfig:
     mqtt_topic_env = os.environ.get("DWD_MQTT_TOPIC")
     if mqtt_topic_env:
         config.mqtt_topic = mqtt_topic_env
+
+    cache_dir_env = os.environ.get("DWD_CACHE_DIR")
+    if cache_dir_env:
+        config.cache_dir = cache_dir_env
 
     # 4. Enforce cache_expiry hard limit: at least 1800 seconds
     if config.cache_expiry_secs < 1800:

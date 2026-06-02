@@ -323,72 +323,94 @@ function getFilteredData() {
   };
   
   const limit = times.length;
+  const forecastIndices = [];
   
   if (currentViewMode === 'near') {
-    // Show only the first 48 hours (hourly)
     const targetLimit = Math.min(48, limit);
     for (let i = 0; i < targetLimit; i++) {
-      addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
+      forecastIndices.push(i);
     }
   } else {
-    // Extended Outlook: displays near-term forecasts in higher time-resolution than longer term forecasts!
-    // Near term (first 48 hours): hourly
-    // Longer term (after 48 hours): downsampled to 6-hour resolution (indices where (i - 48) % 6 == 0)
     for (let i = 0; i < limit; i++) {
       if (i < 48) {
-        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
+        forecastIndices.push(i);
       } else if ((i - 48) % 6 === 0) {
-        addDataPoint(result, i, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory);
+        forecastIndices.push(i);
       }
     }
   }
   
-  return result;
-}
-
-function getLocalTempForHour(isoTime, mqttHistory) {
-  const targetDate = new Date(isoTime);
-  let sum = 0;
-  let count = 0;
+  if (forecastIndices.length === 0) return result;
   
-  for (const [key, temp] of Object.entries(mqttHistory)) {
-    const slotDate = new Date(key);
-    const diffMs = slotDate - targetDate;
-    // Average all 10-minute slots falling within the hour [0, 59] minutes
-    if (diffMs >= 0 && diffMs < 3600000) {
-      sum += temp;
-      count++;
+  const startTime = new Date(times[forecastIndices[0]]).getTime();
+  const endTime = new Date(times[forecastIndices[forecastIndices.length - 1]]).getTime();
+  
+  const uniqueTimesSet = new Set();
+  
+  // Add selected forecast timesteps
+  forecastIndices.forEach(idx => {
+    uniqueTimesSet.add(new Date(times[idx]).getTime());
+  });
+  
+  // Add sensor 10-minute slot times that fall within timeframe
+  Object.keys(mqttHistory).forEach(slotStr => {
+    const slotMs = new Date(slotStr).getTime();
+    if (slotMs >= startTime && slotMs <= endTime) {
+      uniqueTimesSet.add(slotMs);
     }
-  }
+  });
   
-  return count > 0 ? (sum / count) : null;
-}
-
-function addDataPoint(target, index, times, ttt, sund1, wwp, drr1, rr1c, mqttHistory) {
-  target.labels.push(times[index]);
+  // Sort chronologically
+  const sortedTimesMs = Array.from(uniqueTimesSet).sort((a, b) => a - b);
   
-  // Convert temperature Kelvin -> Celsius
-  const tempC = ttt[index] !== null ? ttt[index] - 273.15 : null;
-  target.temps.push(tempC);
-
-  // Local temperature history from MQTT (average of 10-minute intervals within that hour)
-  const isoTime = times[index];
-  const localTemp = getLocalTempForHour(isoTime, mqttHistory);
-  target.localTemps.push(localTemp);
+  // Map forecast data by timestamp epoch for quick lookup
+  const forecastMap = new Map();
+  forecastIndices.forEach(idx => {
+    const ms = new Date(times[idx]).getTime();
+    forecastMap.set(ms, {
+      temp: ttt[idx] !== null ? ttt[idx] - 273.15 : null,
+      sun: sund1[idx] !== null ? sund1[idx] / 60 : null,
+      prob: wwp[idx],
+      dur: drr1[idx] !== null ? drr1[idx] / 60 : null,
+      amt: rr1c[idx]
+    });
+  });
   
-  // Convert sunshine duration seconds -> minutes
-  const sunMin = sund1[index] !== null ? sund1[index] / 60 : null;
-  target.sunDuration.push(sunMin);
+  // Map sensor data by timestamp epoch
+  const sensorMap = new Map();
+  Object.entries(mqttHistory).forEach(([slotStr, temp]) => {
+    const ms = new Date(slotStr).getTime();
+    sensorMap.set(ms, temp);
+  });
   
-  // Rain probability %
-  target.rainProb.push(wwp[index]);
+  // Populate result lists for each unique timestep
+  sortedTimesMs.forEach(ms => {
+    const isoStr = new Date(ms).toISOString();
+    result.labels.push(isoStr);
+    
+    if (forecastMap.has(ms)) {
+      const fcVal = forecastMap.get(ms);
+      result.temps.push(fcVal.temp);
+      result.sunDuration.push(fcVal.sun);
+      result.rainProb.push(fcVal.prob);
+      result.rainDuration.push(fcVal.dur);
+      result.rainAmount.push(fcVal.amt);
+    } else {
+      result.temps.push(null);
+      result.sunDuration.push(null);
+      result.rainProb.push(null);
+      result.rainDuration.push(null);
+      result.rainAmount.push(null);
+    }
+    
+    if (sensorMap.has(ms)) {
+      result.localTemps.push(sensorMap.get(ms));
+    } else {
+      result.localTemps.push(null);
+    }
+  });
   
-  // Convert rain duration seconds -> minutes
-  const rainMin = drr1[index] !== null ? drr1[index] / 60 : null;
-  target.rainDuration.push(rainMin);
-  
-  // Rain amount mm/hour
-  target.rainAmount.push(rr1c[index]);
+  return result;
 }
 
 // Render chart and populate data table
@@ -413,6 +435,11 @@ function renderChartAndTable() {
     const t = data.temps[idx];
     tdTemp.textContent = t !== null ? `${t.toFixed(1)} °C` : '-';
     tr.appendChild(tdTemp);
+
+    const tdLocalTemp = document.createElement('td');
+    const lt = data.localTemps[idx];
+    tdLocalTemp.textContent = lt !== null ? `${lt.toFixed(1)} °C` : '-';
+    tr.appendChild(tdLocalTemp);
     
     const tdRainProb = document.createElement('td');
     const rp = data.rainProb[idx];
@@ -446,7 +473,6 @@ function renderChartAndTable() {
   }
   
   const displayLabels = data.labels.map(isoStr => {
-    // If Near-term, show weekday and hour. If extended, show weekday, date, and hour.
     const date = new Date(isoStr);
     if (currentViewMode === 'near') {
       const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
@@ -489,8 +515,34 @@ function renderChartAndTable() {
           const topY = chart.chartArea.top;
           const bottomY = chart.chartArea.bottom;
           
-          // Find adjacent forecast points bracketing "now"
+          // Find adjacent forecast points in raw forecast data to interpolate forecast temperature
+          const fcTimes = weatherData.forecast.timesteps;
+          const fcTtt = weatherData.forecast.elements.TTT || [];
           let interpolatedTemp = null;
+          let fcIdx1 = -1;
+          let fcIdx2 = -1;
+          for (let i = 0; i < fcTimes.length - 1; i++) {
+            const d1 = new Date(fcTimes[i]);
+            const d2 = new Date(fcTimes[i+1]);
+            if (now >= d1 && now <= d2) {
+              fcIdx1 = i;
+              fcIdx2 = i + 1;
+              break;
+            }
+          }
+          if (fcIdx1 !== -1 && fcIdx2 !== -1) {
+            const d1 = new Date(fcTimes[fcIdx1]);
+            const d2 = new Date(fcTimes[fcIdx2]);
+            const t1 = fcTtt[fcIdx1] !== null ? fcTtt[fcIdx1] - 273.15 : null;
+            const t2 = fcTtt[fcIdx2] !== null ? fcTtt[fcIdx2] - 273.15 : null;
+            if (t1 !== null && t2 !== null) {
+              const weight = (now - d1) / (d2 - d1);
+              interpolatedTemp = t1 + weight * (t2 - t1);
+            }
+          }
+          
+          // Find exact horizontal line X coordinate by interpolating between labels
+          let x = null;
           let idx1 = -1;
           let idx2 = -1;
           for (let i = 0; i < data.labels.length - 1; i++) {
@@ -503,8 +555,6 @@ function renderChartAndTable() {
             }
           }
           
-          // Interpolate exact vertical line X coordinate and forecast temp
-          let x = null;
           if (idx1 !== -1 && idx2 !== -1 && meta.data[idx1] && meta.data[idx2]) {
             const x1 = meta.data[idx1].x;
             const x2 = meta.data[idx2].x;
@@ -512,87 +562,120 @@ function renderChartAndTable() {
             const d2 = new Date(data.labels[idx2]);
             const weight = (now - d1) / (d2 - d1);
             x = x1 + weight * (x2 - x1);
-            
-            const t1 = data.temps[idx1];
-            const t2 = data.temps[idx2];
-            if (t1 !== null && t2 !== null) {
-              interpolatedTemp = t1 + weight * (t2 - t1);
-            }
           } else {
-            x = meta.data[closestIdx].x;
+            x = meta.data[closestIdx] ? meta.data[closestIdx].x : null;
           }
           
-          if (interpolatedTemp === null) {
-            interpolatedTemp = data.temps[closestIdx];
-          }
+          // Draw the vertical "now" line
+          if (x !== null && x >= chart.chartArea.left && x <= chart.chartArea.right) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 5]); // Dashed line pattern
+            ctx.moveTo(x, topY);
+            ctx.lineTo(x, bottomY);
+            ctx.stroke();
 
-          ctx.save();
-          ctx.beginPath();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([5, 5]); // Dashed line pattern
-          ctx.moveTo(x, topY);
-          ctx.lineTo(x, bottomY);
-          ctx.stroke();
+            const yTempScale = chart.scales['y-temp'];
+            
+            // Draw glowing dot for the interpolated forecast temperature on the vertical line
+            if (interpolatedTemp !== null && yTempScale) {
+              const yVal = yTempScale.getPixelForValue(interpolatedTemp);
+              ctx.beginPath();
+              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+              ctx.fillStyle = 'rgba(255, 94, 58, 0.35)'; // Semi-transparent neon orange/red
+              ctx.fill();
+              
+              ctx.beginPath();
+              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+              ctx.fillStyle = '#ff5e3a'; // Solid neon orange/red
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1;
+              ctx.fill();
+              ctx.stroke();
+            }
 
-          // Format multi-line capsule text
-          const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-          const lines = [`Now ${timeStr}`];
-          if (interpolatedTemp !== null) {
-            lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
+            const lastMqtt = weatherData.mqtt_last_measurement;
+
+            // Draw glowing dot for the latest sensor temperature on the vertical line
+            if (lastMqtt && lastMqtt.temp !== null && yTempScale) {
+              const yVal = yTempScale.getPixelForValue(lastMqtt.temp);
+              ctx.beginPath();
+              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+              ctx.fillStyle = 'rgba(0, 255, 102, 0.35)'; // Semi-transparent neon green
+              ctx.fill();
+              
+              ctx.beginPath();
+              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+              ctx.fillStyle = '#00ff66'; // Solid neon green
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1;
+              ctx.fill();
+              ctx.stroke();
+            }
+
+            // Format multi-line capsule text
+            const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+            const lines = [`Now ${timeStr}`];
+            if (interpolatedTemp !== null) {
+              lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
+            }
+            if (lastMqtt && lastMqtt.temp !== null) {
+              lines.push(`Sensor: ${lastMqtt.temp.toFixed(1)}°C`);
+            }
+            
+            // Draw multi-line indicator box
+            ctx.font = '600 10px Outfit';
+            const lineHeights = 15;
+            const padX = 10;
+            const padY = 8;
+            
+            let maxTextWidth = 0;
+            lines.forEach(l => {
+              const w = ctx.measureText(l).width;
+              if (w > maxTextWidth) maxTextWidth = w;
+            });
+            
+            const rectW = maxTextWidth + padX * 2;
+            const rectH = lines.length * lineHeights + padY * 2;
+            
+            // Position capsule adjacent to the vertical line
+            let rectX = x + 10;
+            if (rectX + rectW > chart.chartArea.right) {
+              rectX = x - 10 - rectW;
+            }
+            const rectY = topY + 10;
+            
+            // Draw background capsule for text (transparent gray, opacity 0.5)
+            ctx.fillStyle = 'rgba(22, 24, 38, 0.5)';
+            ctx.beginPath();
+            ctx.roundRect(rectX, rectY, rectW, rectH, 6);
+            ctx.fill();
+            
+            // Add a subtle border outline
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Draw text lines (centered within the capsule box)
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const textX = rectX + rectW / 2;
+            lines.forEach((line, index) => {
+              ctx.fillText(line, textX, rectY + padY + index * lineHeights);
+            });
+
+            ctx.restore();
           }
-          const lastMqtt = weatherData.mqtt_last_measurement;
-          if (lastMqtt && lastMqtt.temp !== null) {
-            lines.push(`Sensor: ${lastMqtt.temp.toFixed(1)}°C`);
-          }
-          
-          // Draw multi-line indicator box
-          ctx.font = '600 10px Outfit';
-          const lineHeights = 15;
-          const padX = 10;
-          const padY = 8;
-          
-          let maxTextWidth = 0;
-          lines.forEach(l => {
-            const w = ctx.measureText(l).width;
-            if (w > maxTextWidth) maxTextWidth = w;
-          });
-          
-          const rectW = maxTextWidth + padX * 2;
-          const rectH = lines.length * lineHeights + padY * 2;
-          
-          // Move capsule to the upper left corner of the chart area
-          const rectX = chart.chartArea.left + 10;
-          const rectY = topY + 10;
-          
-          // Draw background capsule for text (transparent gray, opacity 0.5)
-          ctx.fillStyle = 'rgba(22, 24, 38, 0.5)';
-          ctx.beginPath();
-          ctx.roundRect(rectX, rectY, rectW, rectH, 6);
-          ctx.fill();
-          
-          // Add a subtle border outline
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-          ctx.lineWidth = 1;
-          ctx.stroke();
-          
-          // Draw text lines (centered within the capsule box)
-          ctx.fillStyle = '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          const textX = rectX + rectW / 2;
-          lines.forEach((line, index) => {
-            ctx.fillText(line, textX, rectY + padY + index * lineHeights);
-          });
-          
-          ctx.restore();
         }
       }
     }
   };
   
   weatherChart = new Chart(ctx, {
-    type: 'bar', // Mixed chart uses bar for base, line for individual datasets
+    type: 'bar',
     plugins: [currentLinePlugin],
     data: {
       labels: displayLabels,
@@ -609,6 +692,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.35,
+          spanGaps: true,
           order: 0 // Draw on top
         },
         {
@@ -623,6 +707,7 @@ function renderChartAndTable() {
           fill: true,
           yAxisID: 'y-temp',
           tension: 0.35,
+          spanGaps: true,
           order: 1
         },
         {
@@ -633,8 +718,7 @@ function renderChartAndTable() {
           borderColor: '#00f2fe',
           borderWidth: 1,
           yAxisID: 'y-pct',
-          barPercentage: 0.7,
-          categoryPercentage: 0.7,
+          barThickness: 8,
           order: 3
         },
         {
@@ -645,8 +729,7 @@ function renderChartAndTable() {
           borderColor: '#ffb300',
           borderWidth: 1,
           yAxisID: 'y-sun',
-          barPercentage: 0.5,
-          categoryPercentage: 0.7,
+          barThickness: 8,
           order: 2
         }
       ]
