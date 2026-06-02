@@ -250,13 +250,38 @@ function updateDashboard() {
     const curRainProb = interpolatedRainProb !== null ? Math.round(interpolatedRainProb) : 0;
     document.getElementById('rain-probability').textContent = curRainProb;
     
+    // Find index of current slot
+    let curIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < times.length; i++) {
+      const diff = Math.abs(new Date(times[i]) - nowVal);
+      if (diff < minDiff) {
+        minDiff = diff;
+        curIdx = i;
+      }
+    }
+    
+    // Calculate risk in next 3 hours (from curIdx to curIdx+2)
+    let next3hMax = 0;
+    let next3hNoRainProb = 1.0;
+    let next3hCount = 0;
+    for (let i = curIdx; i < Math.min(curIdx + 3, wwp.length); i++) {
+      if (wwp[i] !== null) {
+        const p = wwp[i] / 100.0;
+        next3hNoRainProb *= (1.0 - p);
+        if (wwp[i] > next3hMax) next3hMax = wwp[i];
+        next3hCount++;
+      }
+    }
+    const next3hUnion = next3hCount > 0 ? Math.round((1.0 - next3hNoRainProb) * 100) : 0;
+
     // Find max rain probability in next 48h
     const limit = Math.min(48, wwp.length);
     let maxProb = 0;
     for (let i = 0; i < limit; i++) {
       if (wwp[i] !== null && wwp[i] > maxProb) maxProb = wwp[i];
     }
-    document.getElementById('rain-summary').textContent = `Max risk: ${Math.round(maxProb)}% chance next 48h`;
+    document.getElementById('rain-summary').textContent = `Next 3h: ${next3hUnion}% risk (Max ${Math.round(next3hMax)}%) | 48h Max: ${Math.round(maxProb)}%`;
   }
   
   // Render Chart and Table
