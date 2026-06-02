@@ -114,6 +114,44 @@ function formatHour(isoStr) {
   });
 }
 
+function interpolateValue(now, times, dataArray) {
+  if (!times || !dataArray || times.length === 0 || dataArray.length === 0) return null;
+  
+  let idx1 = -1;
+  let idx2 = -1;
+  for (let i = 0; i < times.length - 1; i++) {
+    const d1 = new Date(times[i]);
+    const d2 = new Date(times[i+1]);
+    if (now >= d1 && now <= d2) {
+      idx1 = i;
+      idx2 = i + 1;
+      break;
+    }
+  }
+  
+  if (idx1 !== -1 && idx2 !== -1) {
+    const d1 = new Date(times[idx1]);
+    const d2 = new Date(times[idx2]);
+    const v1 = dataArray[idx1];
+    const v2 = dataArray[idx2];
+    if (v1 !== null && v2 !== null) {
+      const weight = (now - d1) / (d2 - d1);
+      return v1 + weight * (v2 - v1);
+    }
+  }
+  
+  let closestIdx = 0;
+  let minDiff = Infinity;
+  for (let i = 0; i < times.length; i++) {
+    const diff = Math.abs(new Date(times[i]) - now);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIdx = i;
+    }
+  }
+  return dataArray[closestIdx];
+}
+
 // Update all components of the dashboard
 function updateDashboard() {
   if (!weatherData || !weatherData.forecast) return;
@@ -168,10 +206,13 @@ function updateDashboard() {
   const drr1 = fc.elements.DRR1 || [];
   const rr1c = fc.elements.RR1c || [];
   
-  // Populate Quick Weather Cards (using current / first timestep values)
+  // Populate Quick Weather Cards (interpolating values for current time)
+  const nowVal = new Date();
+  
   if (ttt.length > 0) {
-    const curTempC = ttt[0] - 273.15;
-    document.getElementById('current-temp').textContent = curTempC.toFixed(1);
+    const interpolatedTempK = interpolateValue(nowVal, times, ttt);
+    const curTempC = interpolatedTempK !== null ? (interpolatedTempK - 273.15) : null;
+    document.getElementById('current-temp').textContent = curTempC !== null ? curTempC.toFixed(1) : '--.-';
     
     // Find min/max in the next 48h
     const limit = Math.min(48, ttt.length);
@@ -188,8 +229,9 @@ function updateDashboard() {
   }
   
   if (sund1.length > 0) {
-    // Current sunshine (in minutes, raw is seconds in last hour)
-    const curSunMin = sund1[0] !== null ? Math.round(sund1[0] / 60) : 0;
+    // Current sunshine (interpolated, converted from seconds to minutes)
+    const interpolatedSunSecs = interpolateValue(nowVal, times, sund1);
+    const curSunMin = interpolatedSunSecs !== null ? Math.round(interpolatedSunSecs / 60) : 0;
     document.getElementById('sun-duration').textContent = curSunMin;
     
     // Calculate total sunshine hours in next 48h
@@ -203,7 +245,9 @@ function updateDashboard() {
   }
   
   if (wwp.length > 0) {
-    const curRainProb = wwp[0] !== null ? Math.round(wwp[0]) : 0;
+    // Current rain probability (interpolated)
+    const interpolatedRainProb = interpolateValue(nowVal, times, wwp);
+    const curRainProb = interpolatedRainProb !== null ? Math.round(interpolatedRainProb) : 0;
     document.getElementById('rain-probability').textContent = curRainProb;
     
     // Find max rain probability in next 48h
