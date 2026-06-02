@@ -464,11 +464,13 @@ function renderChartAndTable() {
           
           const rectW = maxTextWidth + padX * 2;
           const rectH = lines.length * lineHeights + padY * 2;
-          const rectX = x - rectW / 2;
-          const rectY = topY + 6;
           
-          // Draw background capsule for text (transparent gray)
-          ctx.fillStyle = 'rgba(22, 24, 38, 0.85)';
+          // Move capsule to the upper left corner of the chart area
+          const rectX = chart.chartArea.left + 10;
+          const rectY = topY + 10;
+          
+          // Draw background capsule for text (transparent gray, opacity 0.5)
+          ctx.fillStyle = 'rgba(22, 24, 38, 0.5)';
           ctx.beginPath();
           ctx.roundRect(rectX, rectY, rectW, rectH, 6);
           ctx.fill();
@@ -478,12 +480,13 @@ function renderChartAndTable() {
           ctx.lineWidth = 1;
           ctx.stroke();
           
-          // Draw text lines
+          // Draw text lines (centered within the capsule box)
           ctx.fillStyle = '#ffffff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
+          const textX = rectX + rectW / 2;
           lines.forEach((line, index) => {
-            ctx.fillText(line, x, rectY + padY + index * lineHeights);
+            ctx.fillText(line, textX, rectY + padY + index * lineHeights);
           });
           
           ctx.restore();
