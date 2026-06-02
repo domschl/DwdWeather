@@ -9,25 +9,16 @@ license=('MIT')
 depends=('python' 'python-fastapi' 'uvicorn' 'python-pydantic')
 makedepends=('python-build' 'python-installer' 'python-hatchling')
 backup=('etc/dwdweather/config.json')
-source=('dwd-server.service'
-        'dwd_server'
-        'pyproject.toml'
-        'OldVersion/LICENSE')
-sha256sums=('SKIP'
-            'SKIP'
-            'SKIP'
-            'SKIP')
+source=('dwd-server.service')
+sha256sums=('SKIP')
 
 build() {
-  cd "$srcdir"
-  mkdir -p build_src
-  cp -r dwd_server pyproject.toml build_src/
-  cd build_src
+  cd "$startdir"
   python -m build --wheel --no-isolation
 }
 
 package() {
-  cd "$srcdir/build_src"
+  cd "$startdir"
   python -m installer --destdir="$pkgdir" dist/*.whl
 
   # Install systemd service
@@ -45,6 +36,6 @@ package() {
 EOF
 
   # Install license file
-  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 OldVersion/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 # vim:set ts=2 sw=2 et:
