@@ -678,7 +678,7 @@ function renderChartAndTable() {
     type: 'bar',
     plugins: [currentLinePlugin],
     data: {
-      labels: displayLabels,
+      labels: data.labels,
       datasets: [
         {
           type: 'line',
@@ -686,12 +686,11 @@ function renderChartAndTable() {
           data: data.localTemps,
           borderColor: '#00ff66', // Neon green
           borderWidth: 2,
-          borderDash: [3, 3], // Dashed line
-          pointRadius: currentViewMode === 'near' ? 2 : 1,
-          pointBackgroundColor: '#00ff66',
+          pointRadius: 0, // No markers/dots
+          pointHitRadius: 10,
           fill: false,
           yAxisID: 'y-temp',
-          tension: 0.35,
+          tension: 0.3,
           spanGaps: true,
           order: 0 // Draw on top
         },
@@ -761,6 +760,21 @@ function renderChartAndTable() {
           titleFont: { family: 'Outfit', weight: 'bold' },
           bodyFont: { family: 'Outfit' },
           callbacks: {
+            title: function(context) {
+              if (context.length > 0) {
+                const date = new Date(context[0].parsed.x);
+                return date.toLocaleString('en-GB', {
+                  weekday: 'short',
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                  timeZone: 'Europe/Berlin'
+                });
+              }
+              return '';
+            },
             label: function(context) {
               let label = context.dataset.label || '';
               if (label) {
@@ -782,14 +796,34 @@ function renderChartAndTable() {
       },
       scales: {
         x: {
+          type: 'time',
+          time: {
+            unit: currentViewMode === 'near' ? 'hour' : 'day',
+            stepSize: currentViewMode === 'near' ? 6 : 1,
+            displayFormats: {
+              hour: 'EEE HH:mm',
+              day: 'EEE dd MMM'
+            }
+          },
           grid: {
             color: 'rgba(255, 255, 255, 0.03)'
           },
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
-            // Limit tick density
-            maxTicksLimit: currentViewMode === 'near' ? 12 : 20
+            maxTicksLimit: currentViewMode === 'near' ? 12 : 20,
+            callback: function(value, index, ticks) {
+              const date = new Date(value);
+              if (currentViewMode === 'near') {
+                const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
+                const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+                return `${weekday} ${time}`;
+              } else {
+                const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' });
+                const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+                return `${day} ${time}:00`;
+              }
+            }
           }
         },
         'y-temp': {
