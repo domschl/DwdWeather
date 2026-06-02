@@ -370,8 +370,73 @@ function renderChartAndTable() {
   tempGradient.addColorStop(0, 'rgba(255, 94, 58, 0.4)');
   tempGradient.addColorStop(1, 'rgba(255, 42, 109, 0.0)');
   
+  // Custom plugin to draw a vertical dashed line at the closest timestep to 'now'
+  const currentLinePlugin = {
+    id: 'currentLine',
+    afterDraw: (chart) => {
+      if (!data || !data.labels || data.labels.length === 0) return;
+      
+      const now = new Date();
+      let closestIdx = -1;
+      let minDiff = Infinity;
+      
+      for (let i = 0; i < data.labels.length; i++) {
+        const diff = Math.abs(new Date(data.labels[i]) - now);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
+      }
+      
+      if (closestIdx !== -1) {
+        const meta = chart.getDatasetMeta(0);
+        if (meta && meta.data[closestIdx]) {
+          const x = meta.data[closestIdx].x;
+          const ctx = chart.ctx;
+          const topY = chart.chartArea.top;
+          const bottomY = chart.chartArea.bottom;
+          
+          ctx.save();
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 5]); // Dashed line pattern
+          ctx.moveTo(x, topY);
+          ctx.lineTo(x, bottomY);
+          ctx.stroke();
+          
+          // Draw "NOW" indicator box at the top
+          ctx.font = 'bold 9px Outfit';
+          const text = 'NOW';
+          const textWidth = ctx.measureText(text).width;
+          const padX = 6;
+          const padY = 3;
+          const rectW = textWidth + padX * 2;
+          const rectH = 15;
+          const rectX = x - rectW / 2;
+          const rectY = topY - rectH - 2;
+          
+          // Draw background capsule for text
+          ctx.fillStyle = '#ff2a6d'; // Neon pink background matching theme
+          ctx.beginPath();
+          ctx.roundRect(rectX, rectY, rectW, rectH, 4);
+          ctx.fill();
+          
+          // Draw text
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, x, rectY + rectH / 2);
+          
+          ctx.restore();
+        }
+      }
+    }
+  };
+  
   weatherChart = new Chart(ctx, {
     type: 'bar', // Mixed chart uses bar for base, line for individual datasets
+    plugins: [currentLinePlugin],
     data: {
       labels: displayLabels,
       datasets: [
