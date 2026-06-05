@@ -554,6 +554,25 @@ function renderChartAndTable() {
         const uniqueDays = Object.keys(dayGroups).sort();
         if (uniqueDays.length === 0) return;
         
+        const getBerlinMidnight = (dayStr) => {
+          const [year, month, day] = dayStr.split('-').map(Number);
+          const d = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+          const format = d.toLocaleString('sv', { timeZone: 'Europe/Berlin' });
+          const match = format.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+          if (!match) return d;
+          
+          const localMs = Date.UTC(
+            parseInt(match[1]),
+            parseInt(match[2]) - 1,
+            parseInt(match[3]),
+            parseInt(match[4]),
+            parseInt(match[5]),
+            parseInt(match[6])
+          );
+          const offsetMs = localMs - d.getTime();
+          return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMs);
+        };
+
         const getX = (i) => {
           // 1. Try dataset element coordinate
           const meta = chart.getDatasetMeta(1) || chart.getDatasetMeta(0);
@@ -589,17 +608,39 @@ function renderChartAndTable() {
         uniqueDays.forEach((dayStr, index) => {
           const { startIdx, endIdx } = dayGroups[dayStr];
           
-          // Alternating background colors - optimized contrast for dark mode
+          // Alternating background colors - different shades of blue/indigo
           if (index % 2 === 0) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)'; // Slightly darker overlay to deepen background
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.04)'; // Subtle light blue/indigo tint (4% opacity)
           } else {
-            ctx.fillStyle = 'rgba(99, 102, 241, 0.16)'; // Lighter indigo/primary overlay (16% opacity)
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.16)'; // Clearer blue/indigo tint (16% opacity)
           }
           
-          // Left boundary: midpoint with previous index (if not start), otherwise chartArea.left
-          let xLeft = startIdx === 0 ? chartArea.left : (getX(startIdx - 1) + getX(startIdx)) / 2;
-          // Right boundary: midpoint with next index (if not end), otherwise chartArea.right
-          let xRight = endIdx === labels.length - 1 ? chartArea.right : (getX(endIdx) + getX(endIdx + 1)) / 2;
+          let xLeft, xRight;
+          
+          if (xScale.type === 'time') {
+            // Time scale: calculate boundaries exactly at 00:00 midnight local time
+            const tLeft = getBerlinMidnight(dayStr);
+            
+            // Add 1 day for right boundary
+            const [y, m, d] = dayStr.split('-').map(Number);
+            const nextDayDate = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
+            const nextDayStr = nextDayDate.toISOString().split('T')[0];
+            const tRight = getBerlinMidnight(nextDayStr);
+            
+            xLeft = xScale.getPixelForValue(tLeft.getTime());
+            xRight = xScale.getPixelForValue(tRight.getTime());
+          } else {
+            // Category scale: align boundaries exactly with the 00:00 tick index
+            xLeft = startIdx === 0 ? chartArea.left : getX(startIdx);
+            
+            const nextDayStr = uniqueDays[index + 1];
+            if (nextDayStr) {
+              const nextDayStartIdx = dayGroups[nextDayStr].startIdx;
+              xRight = getX(nextDayStartIdx);
+            } else {
+              xRight = chartArea.right;
+            }
+          }
           
           // Clamp boundaries
           xLeft = Math.max(chartArea.left, Math.min(chartArea.right, xLeft));
