@@ -1,6 +1,6 @@
 # Maintainer: Antigravity Coding Agent <antigravity@google.com>
 pkgname=python-dwdweather
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc="Modern DWD Weather Server and Dashboard"
 arch=('any')
@@ -14,6 +14,7 @@ sha256sums=('SKIP')
 
 build() {
   cd "$startdir"
+  rm -rf dist/
   python -m build --wheel --no-isolation
 }
 
