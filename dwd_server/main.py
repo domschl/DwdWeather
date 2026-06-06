@@ -14,6 +14,8 @@ from dwd_server.config import load_config, AppConfig
 from dwd_server.parser import fetch_and_parse, WeatherForecast
 from dwd_server.mqtt_client import MQTTManager
 from dwd_server.database import Database
+from dwd_server.noaa import fetch_and_store_space_weather
+from dwd_server.mim import fetch_and_store_mim_weather
 
 # Set up logging
 logging.basicConfig(
@@ -201,109 +203,11 @@ def get_forecast() -> dict[str, Any]:
 def refresh_forecast() -> dict[str, Any]:
     return get_forecast_data(force_refresh=True)
 
-last_sw_fetch_time = 0.0
-
-def fetch_and_store_space_weather(database: Database) -> None:
-    global last_sw_fetch_time
-    import urllib.request
-    from datetime import datetime
-    
-    now = time.time()
-    if now - last_sw_fetch_time < 300:
-        logger.info("Space weather fetch cooldown active, skipping polling.")
-        return
-        
-    last_sw_fetch_time = now
-    
-    raw_groups: dict[tuple[str, str, str], list[float]] = {}
-    
-    # 1. Fetch Planetary Kp Index
-    try:
-        logger.info("Polling NOAA Kp-index space weather data...")
-        req = urllib.request.Request(
-            "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json", 
-            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            for item in data:
-                time_tag = item.get("time_tag")
-                kp_val = item.get("estimated_kp")
-                if time_tag and kp_val is not None:
-                    dt = datetime.fromisoformat(time_tag)
-                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
-                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
-                    raw_groups.setdefault((timestamp, "noaa", "kp"), []).append(float(kp_val))
-        logger.info("Loaded NOAA Kp-index data.")
-    except Exception as e:
-        logger.warning(f"Failed to fetch NOAA Kp-index: {e}")
-        
-    # 2. Fetch RTSW Solar Wind Plasma
-    try:
-        logger.info("Polling NOAA solar wind plasma data...")
-        req = urllib.request.Request(
-            "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json", 
-            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            for item in data:
-                time_tag = item.get("time_tag")
-                speed = item.get("proton_speed")
-                density = item.get("proton_density")
-                if time_tag:
-                    dt = datetime.fromisoformat(time_tag)
-                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
-                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
-                    if speed is not None:
-                        raw_groups.setdefault((timestamp, "noaa", "wind_speed"), []).append(float(speed))
-                    if density is not None:
-                        raw_groups.setdefault((timestamp, "noaa", "wind_density"), []).append(float(density))
-        logger.info("Loaded NOAA solar wind plasma data.")
-    except Exception as e:
-        logger.warning(f"Failed to fetch NOAA solar wind plasma: {e}")
-        
-    # 3. Fetch RTSW Solar Wind Magnetometer
-    try:
-        logger.info("Polling NOAA solar wind magnetometer data...")
-        req = urllib.request.Request(
-            "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json", 
-            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
-        )
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            for item in data:
-                time_tag = item.get("time_tag")
-                bt = item.get("bt")
-                bz = item.get("bz_gsm")
-                if time_tag:
-                    dt = datetime.fromisoformat(time_tag)
-                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
-                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
-                    if bt is not None:
-                        raw_groups.setdefault((timestamp, "noaa", "imf_bt"), []).append(float(bt))
-                    if bz is not None:
-                        raw_groups.setdefault((timestamp, "noaa", "imf_bz"), []).append(float(bz))
-        logger.info("Loaded NOAA solar wind magnetometer data.")
-    except Exception as e:
-        logger.warning(f"Failed to fetch NOAA solar wind magnetometer: {e}")
-
-    # Calculate average values for each 10-minute slot and perform bulk insert
-    readings: list[tuple[str, str, str, float]] = []
-    for (timestamp, sensor_id, metric), values in raw_groups.items():
-        if values:
-            avg_val = sum(values) / len(values)
-            readings.append((timestamp, sensor_id, metric, avg_val))
-
-    if readings:
-        logger.info(f"Inserting {len(readings)} downsampled space weather records into DB in bulk...")
-        database.insert_sensor_readings(readings)
-        logger.info("Bulk insert finished successfully.")
-
 @app.get("/api/history")
 def get_history(start: str, end: str) -> dict[str, Any]:
-    # Poll space weather data on history request to keep it up to date
+    # Poll space weather and MIM data on history request to keep them up to date
     fetch_and_store_space_weather(db)
+    fetch_and_store_mim_weather(db)
 
     outdoor_history = []
     if config.mqtt_topic:
@@ -329,6 +233,14 @@ def get_history(start: str, end: str) -> dict[str, Any]:
     imf_bt = db.get_sensor_history("noaa", "imf_bt", start, end)
     imf_bz = db.get_sensor_history("noaa", "imf_bz", start, end)
     
+    mim_temp = db.get_sensor_history("mim", "temp", start, end)
+    mim_humidity = db.get_sensor_history("mim", "humidity", start, end)
+    mim_wind_speed = db.get_sensor_history("mim", "wind_speed", start, end)
+    mim_wind_dir = db.get_sensor_history("mim", "wind_dir", start, end)
+    mim_global_rad = db.get_sensor_history("mim", "global_rad", start, end)
+    mim_diffuse_rad = db.get_sensor_history("mim", "diffuse_rad", start, end)
+    mim_atm_rad = db.get_sensor_history("mim", "atm_rad", start, end)
+    
     return {
         "outdoor": outdoor_history,
         "indoor": indoor_history,
@@ -340,7 +252,14 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         "wind_speed": wind_speed,
         "wind_density": wind_density,
         "imf_bt": imf_bt,
-        "imf_bz": imf_bz
+        "imf_bz": imf_bz,
+        "mim_temp": mim_temp,
+        "mim_humidity": mim_humidity,
+        "mim_wind_speed": mim_wind_speed,
+        "mim_wind_dir": mim_wind_dir,
+        "mim_global_rad": mim_global_rad,
+        "mim_diffuse_rad": mim_diffuse_rad,
+        "mim_atm_rad": mim_atm_rad
     }
 
 @app.get("/api/config")

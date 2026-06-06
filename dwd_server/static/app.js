@@ -454,7 +454,14 @@ function getHistoricalFilteredData() {
         wind_speed: [],
         wind_density: [],
         imf_bt: [],
-        imf_bz: []
+        imf_bz: [],
+        mim_temp: [],
+        mim_humidity: [],
+        mim_wind_speed: [],
+        mim_wind_dir: [],
+        mim_global_rad: [],
+        mim_diffuse_rad: [],
+        mim_atm_rad: []
       };
     }
   }
@@ -482,6 +489,13 @@ function getHistoricalFilteredData() {
   addToHourly(historyData.wind_density, 'wind_density');
   addToHourly(historyData.imf_bt, 'imf_bt');
   addToHourly(historyData.imf_bz, 'imf_bz');
+  addToHourly(historyData.mim_temp, 'mim_temp');
+  addToHourly(historyData.mim_humidity, 'mim_humidity');
+  addToHourly(historyData.mim_wind_speed, 'mim_wind_speed');
+  addToHourly(historyData.mim_wind_dir, 'mim_wind_dir');
+  addToHourly(historyData.mim_global_rad, 'mim_global_rad');
+  addToHourly(historyData.mim_diffuse_rad, 'mim_diffuse_rad');
+  addToHourly(historyData.mim_atm_rad, 'mim_atm_rad');
 
   if (historyData.additional) {
     Object.entries(historyData.additional).forEach(([topic, list]) => {
@@ -515,7 +529,14 @@ function getHistoricalFilteredData() {
     wind_speed: [],
     wind_density: [],
     imf_bt: [],
-    imf_bz: []
+    imf_bz: [],
+    mim_temp: [],
+    mim_humidity: [],
+    mim_wind_speed: [],
+    mim_wind_dir: [],
+    mim_global_rad: [],
+    mim_diffuse_rad: [],
+    mim_atm_rad: []
   };
 
   sortedHours.forEach(hourStr => {
@@ -546,6 +567,13 @@ function getHistoricalFilteredData() {
     result.wind_density.push(avg(obj.wind_density));
     result.imf_bt.push(avg(obj.imf_bt));
     result.imf_bz.push(avg(obj.imf_bz));
+    result.mim_temp.push(avg(obj.mim_temp));
+    result.mim_humidity.push(avg(obj.mim_humidity));
+    result.mim_wind_speed.push(avg(obj.mim_wind_speed));
+    result.mim_wind_dir.push(avg(obj.mim_wind_dir));
+    result.mim_global_rad.push(avg(obj.mim_global_rad));
+    result.mim_diffuse_rad.push(avg(obj.mim_diffuse_rad));
+    result.mim_atm_rad.push(avg(obj.mim_atm_rad));
   });
 
   return result;
@@ -768,27 +796,37 @@ function renderChartAndTable() {
         <th>Forecast Temp (°C)</th>
         <th>Outdoor Temp (°C)</th>
         <th>Indoor Temp (°C)</th>
+        <th>MIM Temp (°C)</th>
         <th>Sunshine Dur (min)</th>
         <th>Luminosity (lux)</th>
+        <th>MIM Global Rad (W/m²)</th>
+        <th>MIM Diffuse Rad (W/m²)</th>
+        <th>MIM Atm Rad (W/m²)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
         { name: 'temps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
         { name: 'localTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
         { name: 'indoorTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'mim_temp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
         { name: 'sunDuration', format: v => v !== null ? `${Math.round(v)} min` : '-' },
-        { name: 'luminosity', format: v => v !== null ? `${v.toFixed(1)} lx` : '-' }
+        { name: 'luminosity', format: v => v !== null ? `${v.toFixed(1)} lx` : '-' },
+        { name: 'mim_global_rad', format: v => v !== null ? `${v.toFixed(1)} W/m²` : '-' },
+        { name: 'mim_diffuse_rad', format: v => v !== null ? `${v.toFixed(1)} W/m²` : '-' },
+        { name: 'mim_atm_rad', format: v => v !== null ? `${v.toFixed(1)} W/m²` : '-' }
       ];
     } else if (currentHistoryGroup === 'moisture') {
       theadTr.innerHTML = `
         <th>Time (Local)</th>
         <th>Outdoor Humidity (%)</th>
+        <th>MIM Humidity (%)</th>
         <th>Forecast Rain Prob (%)</th>
         <th>Rain Sensor (0-1)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
         { name: 'humidity', format: v => v !== null ? `${Math.round(v)} %` : '-' },
+        { name: 'mim_humidity', format: v => v !== null ? `${Math.round(v)} %` : '-' },
         { name: 'rainProb', format: v => v !== null ? `${Math.round(v)} %` : '-' },
         { name: 'rain_sensor', format: v => v !== null ? `${v.toFixed(2)}` : '-' }
       ];
@@ -818,6 +856,8 @@ function renderChartAndTable() {
         <th>Wind Density (p/cm³)</th>
         <th>IMF Bt (nT)</th>
         <th>IMF Bz (nT)</th>
+        <th>MIM Wind Speed (m/s)</th>
+        <th>MIM Wind Dir (°)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
@@ -830,7 +870,9 @@ function renderChartAndTable() {
         { name: 'wind_speed', format: v => v !== null ? `${v.toFixed(1)} km/s` : '-' },
         { name: 'wind_density', format: v => v !== null ? `${v.toFixed(1)} p/cm³` : '-' },
         { name: 'imf_bt', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
-        { name: 'imf_bz', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
+        { name: 'imf_bz', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
+        { name: 'mim_wind_speed', format: v => v !== null ? `${v.toFixed(1)} m/s` : '-' },
+        { name: 'mim_wind_dir', format: v => v !== null ? `${Math.round(v)}°` : '-' }
       ];
     }
   }
@@ -1321,6 +1363,20 @@ function renderChartAndTable() {
           order: 1
         },
         {
+          type: 'line',
+          label: 'MIM Temp (°C)',
+          data: data.mim_temp,
+          borderColor: '#10b981',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
           type: 'bar',
           label: 'Sunshine Duration (min/h)',
           data: data.sunDuration,
@@ -1344,6 +1400,48 @@ function renderChartAndTable() {
           tension: 0.3,
           spanGaps: true,
           order: 0
+        },
+        {
+          type: 'line',
+          label: 'MIM Global Rad (W/m²)',
+          data: data.mim_global_rad,
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-solar-rad',
+          tension: 0.3,
+          spanGaps: true,
+          order: 3
+        },
+        {
+          type: 'line',
+          label: 'MIM Diffuse Rad (W/m²)',
+          data: data.mim_diffuse_rad,
+          borderColor: '#3b82f6',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-solar-rad',
+          tension: 0.3,
+          spanGaps: true,
+          order: 4
+        },
+        {
+          type: 'line',
+          label: 'MIM Atm Rad (W/m²)',
+          data: data.mim_atm_rad,
+          borderColor: '#a855f7',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-solar-rad',
+          tension: 0.3,
+          spanGaps: true,
+          order: 5
         }
       ];
     } else if (currentHistoryGroup === 'moisture') {
@@ -1354,6 +1452,20 @@ function renderChartAndTable() {
           data: data.humidity,
           borderColor: '#00f2fe',
           borderWidth: 2.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-pct',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'MIM Humidity (%)',
+          data: data.mim_humidity,
+          borderColor: '#10b981',
+          borderWidth: 2,
           pointRadius: 2,
           pointHitRadius: 10,
           fill: false,
@@ -1574,6 +1686,34 @@ function renderChartAndTable() {
           tension: 0.3,
           spanGaps: true,
           order: 9
+        },
+        {
+          type: 'line',
+          label: 'MIM Wind Speed (m/s)',
+          data: data.mim_wind_speed,
+          borderColor: '#e11d48',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-wind-speed',
+          tension: 0.3,
+          spanGaps: true,
+          order: 10
+        },
+        {
+          type: 'line',
+          label: 'MIM Wind Dir (°)',
+          data: data.mim_wind_dir,
+          borderColor: '#d97706',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-wind-dir',
+          tension: 0.3,
+          spanGaps: true,
+          order: 11
         }
       ];
     }
@@ -1663,11 +1803,19 @@ function renderChartAndTable() {
                 } else if (label.includes('Kp')) {
                   label += val.toFixed(2);
                 } else if (label.includes('Wind Speed')) {
-                  label += val.toFixed(1) + ' km/s';
+                  if (label.includes('MIM')) {
+                    label += val.toFixed(1) + ' m/s';
+                  } else {
+                    label += val.toFixed(1) + ' km/s';
+                  }
+                } else if (label.includes('Wind Dir')) {
+                  label += Math.round(val) + '°';
                 } else if (label.includes('Wind Density')) {
                   label += val.toFixed(1) + ' p/cm³';
                 } else if (label.includes('IMF')) {
                   label += val.toFixed(1) + ' nT';
+                } else if (label.includes('Rad')) {
+                  label += val.toFixed(1) + ' W/m²';
                 } else {
                   label += val;
                 }
@@ -2066,6 +2214,83 @@ function renderChartAndTable() {
             display: true,
             text: 'IMF Strength',
             color: '#e11d48',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-solar-rad': {
+          type: 'linear',
+          position: 'right',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'temp_solar',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#f59e0b',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#f59e0b',
+            font: { family: 'Outfit' },
+            callback: value => `${value} W/m²`
+          },
+          title: {
+            display: true,
+            text: 'Radiation (W/m²)',
+            color: '#f59e0b',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-wind-speed': {
+          type: 'linear',
+          position: 'left',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#e11d48',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#e11d48',
+            font: { family: 'Outfit' },
+            callback: value => `${value} m/s`
+          },
+          title: {
+            display: true,
+            text: 'Wind Speed',
+            color: '#e11d48',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-wind-dir': {
+          type: 'linear',
+          position: 'right',
+          min: 0,
+          max: 360,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#d97706',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#d97706',
+            font: { family: 'Outfit' },
+            callback: value => `${value}°`
+          },
+          title: {
+            display: true,
+            text: 'Wind Direction',
+            color: '#d97706',
             font: { family: 'Outfit', weight: 500 }
           }
         }
