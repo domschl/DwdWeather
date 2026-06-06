@@ -201,8 +201,93 @@ def get_forecast() -> dict[str, Any]:
 def refresh_forecast() -> dict[str, Any]:
     return get_forecast_data(force_refresh=True)
 
+last_sw_fetch_time = 0.0
+
+def fetch_and_store_space_weather(database: Database) -> None:
+    global last_sw_fetch_time
+    import urllib.request
+    from datetime import datetime
+    
+    now = time.time()
+    if now - last_sw_fetch_time < 300:
+        logger.info("Space weather fetch cooldown active, skipping polling.")
+        return
+        
+    last_sw_fetch_time = now
+    
+    # 1. Fetch Planetary Kp Index
+    try:
+        logger.info("Polling NOAA Kp-index space weather data...")
+        req = urllib.request.Request(
+            "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json", 
+            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            for item in data:
+                time_tag = item.get("time_tag")
+                kp_val = item.get("estimated_kp")
+                if time_tag and kp_val is not None:
+                    dt = datetime.fromisoformat(time_tag)
+                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    database.insert_sensor_reading(timestamp, "noaa", "kp", float(kp_val))
+        logger.info("Successfully populated NOAA Kp-index data in DB.")
+    except Exception as e:
+        logger.warning(f"Failed to fetch NOAA Kp-index: {e}")
+        
+    # 2. Fetch RTSW Solar Wind Plasma
+    try:
+        logger.info("Polling NOAA solar wind plasma data...")
+        req = urllib.request.Request(
+            "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json", 
+            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            for item in data:
+                time_tag = item.get("time_tag")
+                speed = item.get("proton_speed")
+                density = item.get("proton_density")
+                if time_tag:
+                    dt = datetime.fromisoformat(time_tag)
+                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    if speed is not None:
+                        database.insert_sensor_reading(timestamp, "noaa", "wind_speed", float(speed))
+                    if density is not None:
+                        database.insert_sensor_reading(timestamp, "noaa", "wind_density", float(density))
+        logger.info("Successfully populated NOAA solar wind plasma data in DB.")
+    except Exception as e:
+        logger.warning(f"Failed to fetch NOAA solar wind plasma: {e}")
+        
+    # 3. Fetch RTSW Solar Wind Magnetometer
+    try:
+        logger.info("Polling NOAA solar wind magnetometer data...")
+        req = urllib.request.Request(
+            "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json", 
+            headers={'User-Agent': 'Mozilla/5.0 (DwdWeatherHub)'}
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            for item in data:
+                time_tag = item.get("time_tag")
+                bt = item.get("bt")
+                bz = item.get("bz_gsm")
+                if time_tag:
+                    dt = datetime.fromisoformat(time_tag)
+                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    if bt is not None:
+                        database.insert_sensor_reading(timestamp, "noaa", "imf_bt", float(bt))
+                    if bz is not None:
+                        database.insert_sensor_reading(timestamp, "noaa", "imf_bz", float(bz))
+        logger.info("Successfully populated NOAA solar wind magnetometer data in DB.")
+    except Exception as e:
+        logger.warning(f"Failed to fetch NOAA solar wind magnetometer: {e}")
+
 @app.get("/api/history")
 def get_history(start: str, end: str) -> dict[str, Any]:
+    # Poll space weather data on history request to keep it up to date
+    fetch_and_store_space_weather(db)
+
     outdoor_history = []
     if config.mqtt_topic:
         outdoor_history = db.get_sensor_history(config.mqtt_topic, "temperature", start, end)
@@ -220,6 +305,12 @@ def get_history(start: str, end: str) -> dict[str, Any]:
     for topic in config.mqtt_additional_topics:
         metric = topic.split('/')[-1]
         additional_history[topic] = db.get_sensor_history(topic, metric, start, end)
+        
+    kp_history = db.get_sensor_history("noaa", "kp", start, end)
+    wind_speed = db.get_sensor_history("noaa", "wind_speed", start, end)
+    wind_density = db.get_sensor_history("noaa", "wind_density", start, end)
+    imf_bt = db.get_sensor_history("noaa", "imf_bt", start, end)
+    imf_bz = db.get_sensor_history("noaa", "imf_bz", start, end)
     
     return {
         "outdoor": outdoor_history,
@@ -227,7 +318,12 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         "forecast": forecast_history,
         "forecast_wwp": forecast_wwp,
         "forecast_sund": forecast_sund,
-        "additional": additional_history
+        "additional": additional_history,
+        "kp": kp_history,
+        "wind_speed": wind_speed,
+        "wind_density": wind_density,
+        "imf_bt": imf_bt,
+        "imf_bz": imf_bz
     }
 
 @app.get("/api/config")
