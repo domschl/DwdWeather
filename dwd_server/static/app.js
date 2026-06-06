@@ -721,13 +721,13 @@ function renderChartAndTable() {
     `;
     columns = [
       { name: 'time', format: formatLocalTime },
-      { name: 'temp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
-      { name: 'localTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
-      { name: 'indoorTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'temps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'localTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'indoorTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
       { name: 'rainProb', format: v => v !== null ? `${Math.round(v)} %` : '-' },
-      { name: 'rainDur', format: v => v !== null ? `${Math.round(v)} min` : '-' },
-      { name: 'rainAmt', format: v => v !== null ? `${v.toFixed(2)} mm` : '-' },
-      { name: 'sunDur', format: v => v !== null ? `${Math.round(v)} min` : '-' }
+      { name: 'rainDuration', format: v => v !== null ? `${Math.round(v)} min` : '-' },
+      { name: 'rainAmount', format: v => v !== null ? `${v.toFixed(2)} mm` : '-' },
+      { name: 'sunDuration', format: v => v !== null ? `${Math.round(v)} min` : '-' }
     ];
   } else {
     if (currentHistoryGroup === 'temp_solar') {
@@ -741,10 +741,10 @@ function renderChartAndTable() {
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
-        { name: 'temp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
-        { name: 'localTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
-        { name: 'indoorTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
-        { name: 'sunDur', format: v => v !== null ? `${Math.round(v)} min` : '-' },
+        { name: 'temps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'localTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'indoorTemps', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'sunDuration', format: v => v !== null ? `${Math.round(v)} min` : '-' },
         { name: 'luminosity', format: v => v !== null ? `${v.toFixed(1)} lx` : '-' }
       ];
     } else if (currentHistoryGroup === 'moisture') {
