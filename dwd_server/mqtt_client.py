@@ -15,7 +15,7 @@ import paho.mqtt.client as mqtt
 logger = logging.getLogger("dwd_server.mqtt")
 
 class MQTTManager:
-    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache")) -> None:
+    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache"), history_filename: str = "mqtt_history.json") -> None:
         self.host = host
         self.port = port
         self.topic = topic
@@ -27,7 +27,7 @@ class MQTTManager:
         # Maps hour slot to average temperature
         self.history: dict[str, float] = {}
         
-        self.history_file = cache_dir / "mqtt_history.json"
+        self.history_file = cache_dir / history_filename
         self.lock = threading.Lock()
         
         self.client: mqtt.Client | None = None

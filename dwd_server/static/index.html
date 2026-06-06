@@ -78,6 +78,31 @@
           </div>
         </div>
 
+        <!-- Quick Weather Card: Sensors -->
+        <div class="glass-card stat-card sensor-theme" id="card-sensors">
+          <div class="card-icon">🏠</div>
+          <div class="card-content">
+            <h4>Home Sensors</h4>
+            <div class="sensor-readings-row">
+              <div class="sensor-reading">
+                <span class="sensor-lbl">Indoor</span>
+                <div class="sensor-val-container">
+                  <span class="sensor-val" id="sensor-indoor-temp">--.-</span><span class="sensor-unit">°C</span>
+                </div>
+              </div>
+              <div class="sensor-reading">
+                <span class="sensor-lbl">Outdoor</span>
+                <div class="sensor-val-container">
+                  <span class="sensor-val" id="sensor-outdoor-temp">--.-</span><span class="sensor-unit">°C</span>
+                </div>
+              </div>
+            </div>
+            <div class="stat-footer" id="sensor-updated">
+              No measurements received
+            </div>
+          </div>
+        </div>
+
         <!-- Quick Weather Card: Sunshine -->
         <div class="glass-card stat-card sun-theme" id="card-sun">
           <div class="card-icon">☀️</div>
@@ -140,7 +165,8 @@
               <tr>
                 <th>Time (Local)</th>
                 <th>Forecast Temp (°C)</th>
-                <th>Sensor Temp (°C)</th>
+                <th>Outdoor Sensor (°C)</th>
+                <th>Indoor Sensor (°C)</th>
                 <th>Precipitation Prob (%)</th>
                 <th>Precipitation Dur (min)</th>
                 <th>Precipitation Amt (mm)</th>
@@ -149,7 +175,7 @@
             </thead>
             <tbody id="forecast-table-body">
               <tr>
-                <td colspan="7" class="table-placeholder">Loading forecast data table...</td>
+                <td colspan="8" class="table-placeholder">Loading forecast data table...</td>
               </tr>
             </tbody>
           </table>

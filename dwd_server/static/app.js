@@ -208,6 +208,44 @@ function updateDashboard() {
   
   // Populate Quick Weather Cards (interpolating values for current time)
   const nowVal = new Date();
+
+  // Populate Home Sensors Card
+  const lastMqtt = weatherData.mqtt_last_measurement;
+  const lastMqttIndoor = weatherData.mqtt_indoor_last_measurement;
+  
+  if (lastMqtt && lastMqtt.temp !== null) {
+    document.getElementById('sensor-outdoor-temp').textContent = lastMqtt.temp.toFixed(1);
+  } else {
+    document.getElementById('sensor-outdoor-temp').textContent = '--.-';
+  }
+  
+  if (lastMqttIndoor && lastMqttIndoor.temp !== null) {
+    document.getElementById('sensor-indoor-temp').textContent = lastMqttIndoor.temp.toFixed(1);
+  } else {
+    document.getElementById('sensor-indoor-temp').textContent = '--.-';
+  }
+  
+  let lastTimeMs = 0;
+  if (lastMqtt && lastMqtt.time) {
+    lastTimeMs = Math.max(lastTimeMs, lastMqtt.time * 1000);
+  }
+  if (lastMqttIndoor && lastMqttIndoor.time) {
+    lastTimeMs = Math.max(lastTimeMs, lastMqttIndoor.time * 1000);
+  }
+  
+  if (lastTimeMs > 0) {
+    const sensorDate = new Date(lastTimeMs);
+    const timeFormatted = sensorDate.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: 'Europe/Berlin'
+    });
+    document.getElementById('sensor-updated').textContent = `Last reading at ${timeFormatted} CET/CEST`;
+  } else {
+    document.getElementById('sensor-updated').textContent = 'No measurements received';
+  }
   
   if (ttt.length > 0) {
     const interpolatedTempK = interpolateValue(nowVal, times, ttt);
@@ -330,11 +368,13 @@ function getFilteredData() {
   const drr1 = fc.elements.DRR1 || [];
   const rr1c = fc.elements.RR1c || [];
   const mqttHistory = weatherData.mqtt_history || {};
+  const mqttIndoorHistory = weatherData.mqtt_indoor_history || {};
   
   const result = {
     labels: [],
     temps: [],
     localTemps: [],
+    indoorTemps: [],
     sunDuration: [],
     rainProb: [],
     rainDuration: [],
@@ -377,6 +417,13 @@ function getFilteredData() {
         uniqueTimesSet.add(slotMs);
       }
     });
+
+    Object.keys(mqttIndoorHistory).forEach(slotStr => {
+      const slotMs = new Date(slotStr).getTime();
+      if (slotMs >= startTime && slotMs <= endTime) {
+        uniqueTimesSet.add(slotMs);
+      }
+    });
     
     const sortedTimesMs = Array.from(uniqueTimesSet).sort((a, b) => a - b);
     
@@ -396,6 +443,12 @@ function getFilteredData() {
     Object.entries(mqttHistory).forEach(([slotStr, temp]) => {
       const ms = new Date(slotStr).getTime();
       sensorMap.set(ms, temp);
+    });
+
+    const sensorIndoorMap = new Map();
+    Object.entries(mqttIndoorHistory).forEach(([slotStr, temp]) => {
+      const ms = new Date(slotStr).getTime();
+      sensorIndoorMap.set(ms, temp);
     });
     
     sortedTimesMs.forEach(ms => {
@@ -422,6 +475,12 @@ function getFilteredData() {
       } else {
         result.localTemps.push(null);
       }
+
+      if (sensorIndoorMap.has(ms)) {
+        result.indoorTemps.push(sensorIndoorMap.get(ms));
+      } else {
+        result.indoorTemps.push(null);
+      }
     });
   } else {
     // 2. Category scale: Keep exactly the forecast timesteps
@@ -445,6 +504,9 @@ function getFilteredData() {
       // For local temperatures in extended view, use hourly averaged sensor values for the first 48 hours
       const localTemp = getLocalTempForHour(isoStr, mqttHistory);
       result.localTemps.push(localTemp);
+
+      const indoorTemp = getLocalTempForHour(isoStr, mqttIndoorHistory);
+      result.indoorTemps.push(indoorTemp);
     });
   }
   
@@ -478,6 +540,11 @@ function renderChartAndTable() {
     const lt = data.localTemps[idx];
     tdLocalTemp.textContent = lt !== null ? `${lt.toFixed(1)} °C` : '-';
     tr.appendChild(tdLocalTemp);
+
+    const tdIndoorTemp = document.createElement('td');
+    const it = data.indoorTemps[idx];
+    tdIndoorTemp.textContent = it !== null ? `${it.toFixed(1)} °C` : '-';
+    tr.appendChild(tdIndoorTemp);
     
     const tdRainProb = document.createElement('td');
     const rp = data.rainProb[idx];
@@ -635,6 +702,7 @@ function renderChartAndTable() {
             }
 
             const lastMqtt = weatherData.mqtt_last_measurement;
+            const lastMqttIndoor = weatherData.mqtt_indoor_last_measurement;
 
             // Draw glowing dot for the latest sensor temperature on the vertical line
             if (lastMqtt && lastMqtt.temp !== null && yTempScale) {
@@ -653,6 +721,23 @@ function renderChartAndTable() {
               ctx.stroke();
             }
 
+            // Draw glowing dot for the latest indoor sensor temperature on the vertical line
+            if (lastMqttIndoor && lastMqttIndoor.temp !== null && yTempScale) {
+              const yVal = yTempScale.getPixelForValue(lastMqttIndoor.temp);
+              ctx.beginPath();
+              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+              ctx.fillStyle = 'rgba(255, 0, 240, 0.35)'; // Semi-transparent neon pink
+              ctx.fill();
+              
+              ctx.beginPath();
+              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+              ctx.fillStyle = '#ff00f0'; // Solid neon pink
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 1;
+              ctx.fill();
+              ctx.stroke();
+            }
+
             // Format multi-line capsule text
             const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
             const lines = [`Now ${timeStr}`];
@@ -660,7 +745,10 @@ function renderChartAndTable() {
               lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
             }
             if (lastMqtt && lastMqtt.temp !== null) {
-              lines.push(`Sensor: ${lastMqtt.temp.toFixed(1)}°C`);
+              lines.push(`Outdoor: ${lastMqtt.temp.toFixed(1)}°C`);
+            }
+            if (lastMqttIndoor && lastMqttIndoor.temp !== null) {
+              lines.push(`Indoor: ${lastMqttIndoor.temp.toFixed(1)}°C`);
             }
             
             // Draw multi-line indicator box
@@ -720,9 +808,23 @@ function renderChartAndTable() {
       datasets: [
         {
           type: 'line',
-          label: 'Local Temp (°C)',
+          label: 'Outdoor Temp (°C)',
           data: data.localTemps,
           borderColor: '#00ff66', // Neon green
+          borderWidth: 2,
+          pointRadius: 0, // No markers/dots
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0 // Draw on top
+        },
+        {
+          type: 'line',
+          label: 'Indoor Temp (°C)',
+          data: data.indoorTemps,
+          borderColor: '#ff00f0', // Neon pink
           borderWidth: 2,
           pointRadius: 0, // No markers/dots
           pointHitRadius: 10,

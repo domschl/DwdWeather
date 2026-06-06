@@ -28,13 +28,23 @@ CACHE_DIR = Path(config.cache_dir)
 CACHE_FILE = CACHE_DIR / "weather_cache.json"
 
 mqtt_manager: MQTTManager | None = None
+mqtt_manager_indoor: MQTTManager | None = None
 if config.mqtt_host:
     mqtt_manager = MQTTManager(
         host=config.mqtt_host,
         port=config.mqtt_port,
         topic=config.mqtt_topic,
-        cache_dir=CACHE_DIR
+        cache_dir=CACHE_DIR,
+        history_filename="mqtt_history.json"
     )
+    if config.mqtt_topic_indoor:
+        mqtt_manager_indoor = MQTTManager(
+            host=config.mqtt_host,
+            port=config.mqtt_port,
+            topic=config.mqtt_topic_indoor,
+            cache_dir=CACHE_DIR,
+            history_filename="mqtt_history_indoor.json"
+        )
 
 app = FastAPI(
     title="Modern DWD Weather Hub",
@@ -163,6 +173,7 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
         last_updated = cache.last_updated  # type: ignore
 
     mqtt_data = mqtt_manager.get_data() if mqtt_manager else {"last_measurement": None, "history": {}}
+    mqtt_indoor_data = mqtt_manager_indoor.get_data() if mqtt_manager_indoor else {"last_measurement": None, "history": {}}
     return {
         "source": source,
         "last_updated": last_updated,
@@ -170,7 +181,9 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
         "cache_expiry_secs": config.cache_expiry_secs,
         "forecast": result_forecast,
         "mqtt_last_measurement": mqtt_data.get("last_measurement"),
-        "mqtt_history": mqtt_data.get("history")
+        "mqtt_history": mqtt_data.get("history"),
+        "mqtt_indoor_last_measurement": mqtt_indoor_data.get("last_measurement"),
+        "mqtt_indoor_history": mqtt_indoor_data.get("history")
     }
 
 @app.get("/api/forecast")
@@ -204,6 +217,8 @@ def run() -> None:
     
     if mqtt_manager:
         mqtt_manager.start()
+    if mqtt_manager_indoor:
+        mqtt_manager_indoor.start()
 
     logger.info(f"Starting server with station_id={config.station_id}, cache_expiry_secs={config.cache_expiry_secs}s")
     uvicorn.run("dwd_server.main:app", host=config.host, port=config.port, reload=False)

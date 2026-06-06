@@ -11,6 +11,7 @@ class AppConfig(BaseModel):
     mqtt_host: str | None = "nalanda"
     mqtt_port: int = 1883
     mqtt_topic: str = "omu/enviro-master/BME280-1/sensor/temperature"
+    mqtt_topic_indoor: str | None = "blegate/gator/wohnzimmer/sensor/temperature"
     cache_dir: str = "cache"
 
 def load_config() -> AppConfig:
@@ -40,6 +41,8 @@ def load_config() -> AppConfig:
                         config.mqtt_port = int(data["mqtt_port"])
                     if "mqtt_topic" in data:
                         config.mqtt_topic = str(data["mqtt_topic"])
+                    if "mqtt_topic_indoor" in data:
+                        config.mqtt_topic_indoor = data["mqtt_topic_indoor"] if data["mqtt_topic_indoor"] else None
                     if "cache_dir" in data:
                         config.cache_dir = str(data["cache_dir"])
             except Exception as e:
@@ -82,6 +85,10 @@ def load_config() -> AppConfig:
     mqtt_topic_env = os.environ.get("DWD_MQTT_TOPIC")
     if mqtt_topic_env:
         config.mqtt_topic = mqtt_topic_env
+
+    mqtt_topic_indoor_env = os.environ.get("DWD_MQTT_TOPIC_INDOOR")
+    if mqtt_topic_indoor_env is not None:
+        config.mqtt_topic_indoor = mqtt_topic_indoor_env if mqtt_topic_indoor_env else None
 
     cache_dir_env = os.environ.get("DWD_CACHE_DIR")
     if cache_dir_env:
