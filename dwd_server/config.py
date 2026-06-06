@@ -18,6 +18,9 @@ class AppConfig(BaseModel):
         "omu/enviro-master/BME280-1/sensor/humidity",
         "omu/enviro-master/TSL2561-1/sensor/illuminance",
         "omu/enviro-master/MAGNETIC-1/sensor/magnetic_field_strength",
+        "omu/enviro-master/MAGNETIC-1/sensor/magnetic_field_x",
+        "omu/enviro-master/MAGNETIC-1/sensor/magnetic_field_y",
+        "omu/enviro-master/MAGNETIC-1/sensor/magnetic_field_z",
         "omu/enviro-master/GAMMA-1/sensor/gamma10minavg",
         "omu/enviro-master/GAMMA-1/sensor/gamma1minavg",
         "omu/enviro-master/RAIN-1/sensor/unitrain"

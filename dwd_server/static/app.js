@@ -406,6 +406,9 @@ function getMetricKeyFromTopic(topic) {
   if (topic.endsWith('/humidity')) return 'humidity';
   if (topic.endsWith('/illuminance')) return 'luminosity';
   if (topic.endsWith('/magnetic_field_strength')) return 'magnetic';
+  if (topic.endsWith('/magnetic_field_x')) return 'magnetic_x';
+  if (topic.endsWith('/magnetic_field_y')) return 'magnetic_y';
+  if (topic.endsWith('/magnetic_field_z')) return 'magnetic_z';
   if (topic.endsWith('/gamma10minavg')) return 'gamma_10m';
   if (topic.endsWith('/gamma1minavg')) return 'gamma_1m';
   if (topic.endsWith('/unitrain')) return 'rain_sensor';
@@ -441,6 +444,9 @@ function getHistoricalFilteredData() {
         humidity: [],
         luminosity: [],
         magnetic: [],
+        magnetic_x: [],
+        magnetic_y: [],
+        magnetic_z: [],
         gamma_10m: [],
         gamma_1m: [],
         rain_sensor: []
@@ -489,6 +495,9 @@ function getHistoricalFilteredData() {
     humidity: [],
     luminosity: [],
     magnetic: [],
+    magnetic_x: [],
+    magnetic_y: [],
+    magnetic_z: [],
     gamma_10m: [],
     gamma_1m: [],
     rain_sensor: []
@@ -511,6 +520,9 @@ function getHistoricalFilteredData() {
     result.humidity.push(avg(obj.humidity));
     result.luminosity.push(avg(obj.luminosity));
     result.magnetic.push(avg(obj.magnetic));
+    result.magnetic_x.push(avg(obj.magnetic_x));
+    result.magnetic_y.push(avg(obj.magnetic_y));
+    result.magnetic_z.push(avg(obj.magnetic_z));
     result.gamma_10m.push(avg(obj.gamma_10m));
     result.gamma_1m.push(avg(obj.gamma_1m));
     result.rain_sensor.push(avg(obj.rain_sensor));
@@ -752,13 +764,13 @@ function renderChartAndTable() {
         <th>Time (Local)</th>
         <th>Outdoor Humidity (%)</th>
         <th>Forecast Rain Prob (%)</th>
-        <th>Rain Sensor (mm)</th>
+        <th>Rain Sensor (0-1)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
         { name: 'humidity', format: v => v !== null ? `${Math.round(v)} %` : '-' },
         { name: 'rainProb', format: v => v !== null ? `${Math.round(v)} %` : '-' },
-        { name: 'rain_sensor', format: v => v !== null ? `${v.toFixed(2)} mm` : '-' }
+        { name: 'rain_sensor', format: v => v !== null ? `${v.toFixed(2)}` : '-' }
       ];
     } else if (currentHistoryGroup === 'radiation') {
       theadTr.innerHTML = `
@@ -777,12 +789,18 @@ function renderChartAndTable() {
       theadTr.innerHTML = `
         <th>Time (Local)</th>
         <th>Air Pressure (hPa)</th>
-        <th>Magnetic Field (nT)</th>
+        <th>Magnetic Total (nT)</th>
+        <th>Magnetic X (nT)</th>
+        <th>Magnetic Y (nT)</th>
+        <th>Magnetic Z (nT)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
         { name: 'pressure', format: v => v !== null ? `${v.toFixed(1)} hPa` : '-' },
-        { name: 'magnetic', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
+        { name: 'magnetic', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
+        { name: 'magnetic_x', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
+        { name: 'magnetic_y', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
+        { name: 'magnetic_z', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
       ];
     }
   }
@@ -1328,7 +1346,7 @@ function renderChartAndTable() {
         },
         {
           type: 'bar',
-          label: 'Rain Sensor (mm)',
+          label: 'Rain Sensor (0-1)',
           data: data.rain_sensor,
           backgroundColor: 'rgba(99, 102, 241, 0.45)',
           borderColor: '#6366f1',
@@ -1401,10 +1419,10 @@ function renderChartAndTable() {
         },
         {
           type: 'line',
-          label: 'Magnetic Field Strength (nT)',
+          label: 'Magnetic Total (nT)',
           data: data.magnetic,
           borderColor: '#ff5e3a',
-          borderWidth: 2,
+          borderWidth: 3,
           pointRadius: 0,
           pointHitRadius: 10,
           fill: false,
@@ -1412,6 +1430,48 @@ function renderChartAndTable() {
           tension: 0.3,
           spanGaps: true,
           order: 1
+        },
+        {
+          type: 'line',
+          label: 'Magnetic X (nT)',
+          data: data.magnetic_x,
+          borderColor: '#ffb300',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag',
+          tension: 0.3,
+          spanGaps: true,
+          order: 2
+        },
+        {
+          type: 'line',
+          label: 'Magnetic Y (nT)',
+          data: data.magnetic_y,
+          borderColor: '#00ff66',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag',
+          tension: 0.3,
+          spanGaps: true,
+          order: 3
+        },
+        {
+          type: 'line',
+          label: 'Magnetic Z (nT)',
+          data: data.magnetic_z,
+          borderColor: '#ff00f0',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag',
+          tension: 0.3,
+          spanGaps: true,
+          order: 4
         }
       ];
     }
@@ -1489,7 +1549,7 @@ function renderChartAndTable() {
                 } else if (label.includes('Luminosity')) {
                   label += val.toFixed(1) + ' lx';
                 } else if (label.includes('Rain Sensor')) {
-                  label += val.toFixed(2) + ' mm';
+                  label += val.toFixed(2);
                 } else if (label.includes('Geiger')) {
                   label += val.toFixed(2) + ' Hz';
                 } else if (label.includes('Gamma')) {
@@ -1690,11 +1750,11 @@ function renderChartAndTable() {
           ticks: {
             color: '#6366f1',
             font: { family: 'Outfit' },
-            callback: value => `${value} mm`
+            callback: value => `${value}`
           },
           title: {
             display: true,
-            text: 'Rain Sensor',
+            text: 'Rain Sensor (0-1)',
             color: '#6366f1',
             font: { family: 'Outfit', weight: 500 }
           }
