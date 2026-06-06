@@ -1,6 +1,6 @@
 [project]
 name = "dwdweather"
-version = "0.2.9"
+version = "0.2.10"
 description = "Modern DWD Weather Server and Dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
