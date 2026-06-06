@@ -215,6 +215,8 @@ def fetch_and_store_space_weather(database: Database) -> None:
         
     last_sw_fetch_time = now
     
+    raw_groups: dict[tuple[str, str, str], list[float]] = {}
+    
     # 1. Fetch Planetary Kp Index
     try:
         logger.info("Polling NOAA Kp-index space weather data...")
@@ -229,9 +231,10 @@ def fetch_and_store_space_weather(database: Database) -> None:
                 kp_val = item.get("estimated_kp")
                 if time_tag and kp_val is not None:
                     dt = datetime.fromisoformat(time_tag)
-                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
-                    database.insert_sensor_reading(timestamp, "noaa", "kp", float(kp_val))
-        logger.info("Successfully populated NOAA Kp-index data in DB.")
+                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
+                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    raw_groups.setdefault((timestamp, "noaa", "kp"), []).append(float(kp_val))
+        logger.info("Loaded NOAA Kp-index data.")
     except Exception as e:
         logger.warning(f"Failed to fetch NOAA Kp-index: {e}")
         
@@ -250,12 +253,13 @@ def fetch_and_store_space_weather(database: Database) -> None:
                 density = item.get("proton_density")
                 if time_tag:
                     dt = datetime.fromisoformat(time_tag)
-                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
+                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
                     if speed is not None:
-                        database.insert_sensor_reading(timestamp, "noaa", "wind_speed", float(speed))
+                        raw_groups.setdefault((timestamp, "noaa", "wind_speed"), []).append(float(speed))
                     if density is not None:
-                        database.insert_sensor_reading(timestamp, "noaa", "wind_density", float(density))
-        logger.info("Successfully populated NOAA solar wind plasma data in DB.")
+                        raw_groups.setdefault((timestamp, "noaa", "wind_density"), []).append(float(density))
+        logger.info("Loaded NOAA solar wind plasma data.")
     except Exception as e:
         logger.warning(f"Failed to fetch NOAA solar wind plasma: {e}")
         
@@ -274,14 +278,27 @@ def fetch_and_store_space_weather(database: Database) -> None:
                 bz = item.get("bz_gsm")
                 if time_tag:
                     dt = datetime.fromisoformat(time_tag)
-                    timestamp = dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
+                    dt_10m = dt.replace(minute=(dt.minute // 10) * 10, second=0, microsecond=0)
+                    timestamp = dt_10m.strftime("%Y-%m-%dT%H:%M:00.000Z")
                     if bt is not None:
-                        database.insert_sensor_reading(timestamp, "noaa", "imf_bt", float(bt))
+                        raw_groups.setdefault((timestamp, "noaa", "imf_bt"), []).append(float(bt))
                     if bz is not None:
-                        database.insert_sensor_reading(timestamp, "noaa", "imf_bz", float(bz))
-        logger.info("Successfully populated NOAA solar wind magnetometer data in DB.")
+                        raw_groups.setdefault((timestamp, "noaa", "imf_bz"), []).append(float(bz))
+        logger.info("Loaded NOAA solar wind magnetometer data.")
     except Exception as e:
         logger.warning(f"Failed to fetch NOAA solar wind magnetometer: {e}")
+
+    # Calculate average values for each 10-minute slot and perform bulk insert
+    readings: list[tuple[str, str, str, float]] = []
+    for (timestamp, sensor_id, metric), values in raw_groups.items():
+        if values:
+            avg_val = sum(values) / len(values)
+            readings.append((timestamp, sensor_id, metric, avg_val))
+
+    if readings:
+        logger.info(f"Inserting {len(readings)} downsampled space weather records into DB in bulk...")
+        database.insert_sensor_readings(readings)
+        logger.info("Bulk insert finished successfully.")
 
 @app.get("/api/history")
 def get_history(start: str, end: str) -> dict[str, Any]:

@@ -11,7 +11,7 @@ class Database:
         self.init_db()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -60,6 +60,19 @@ class Database:
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to insert sensor reading: {e}")
+
+    def insert_sensor_readings(self, readings: list[tuple[str, str, str, float]]) -> None:
+        if not readings:
+            return
+        try:
+            with self._get_conn() as conn:
+                conn.executemany("""
+                    INSERT OR REPLACE INTO sensor_readings (timestamp, sensor_id, metric, value)
+                    VALUES (?, ?, ?, ?);
+                """, readings)
+                conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to insert sensor readings: {e}")
 
     def insert_forecast_readings(self, station_id: str, timesteps: list[str], elements: dict[str, list[float | None]]) -> None:
         try:
