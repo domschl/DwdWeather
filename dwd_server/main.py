@@ -33,10 +33,11 @@ CACHE_FILE = CACHE_DIR / "weather_cache.json"
 mqtt_manager: MQTTManager | None = None
 mqtt_manager_indoor: MQTTManager | None = None
 if config.mqtt_host:
+    outdoor_topics = [config.mqtt_topic] + config.mqtt_additional_topics
     mqtt_manager = MQTTManager(
         host=config.mqtt_host,
         port=config.mqtt_port,
-        topic=config.mqtt_topic,
+        topic=outdoor_topics,
         cache_dir=CACHE_DIR,
         history_filename="mqtt_history.json",
         db=db
@@ -211,11 +212,22 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         indoor_history = db.get_sensor_history(config.mqtt_topic_indoor, "temperature", start, end)
         
     forecast_history = db.get_forecast_history(config.station_id, "TTT", start, end)
+    forecast_wwp = db.get_forecast_history(config.station_id, "wwP", start, end)
+    forecast_sund = db.get_forecast_history(config.station_id, "SunD1", start, end)
+    
+    # Query history for all additional sensors
+    additional_history = {}
+    for topic in config.mqtt_additional_topics:
+        metric = topic.split('/')[-1]
+        additional_history[topic] = db.get_sensor_history(topic, metric, start, end)
     
     return {
         "outdoor": outdoor_history,
         "indoor": indoor_history,
-        "forecast": forecast_history
+        "forecast": forecast_history,
+        "forecast_wwp": forecast_wwp,
+        "forecast_sund": forecast_sund,
+        "additional": additional_history
     }
 
 @app.get("/api/config")

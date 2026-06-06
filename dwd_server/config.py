@@ -12,6 +12,16 @@ class AppConfig(BaseModel):
     mqtt_port: int = 1883
     mqtt_topic: str = "omu/enviro-master/BME280-1/sensor/temperature"
     mqtt_topic_indoor: str | None = "blegate/gator/wohnzimmer/sensor/temperature"
+    mqtt_additional_topics: list[str] = [
+        "omu/enviro-master/GEIGER-1/sensor/frequency",
+        "omu/enviro-master/BME280-1/sensor/pressureNN",
+        "omu/enviro-master/BME280-1/sensor/humidity",
+        "omu/enviro-master/TSL2561-1/sensor/illuminance",
+        "omu/enviro-master/MAGNETIC-1/sensor/magnetic_field_strength",
+        "omu/enviro-master/GAMMA-1/sensor/gamma10minavg",
+        "omu/enviro-master/GAMMA-1/sensor/gamma1minavg",
+        "omu/enviro-master/RAIN-1/sensor/unitrain"
+    ]
     cache_dir: str = "cache"
     database_path: str = "cache/dwdweather.db"
 
@@ -44,6 +54,8 @@ def load_config() -> AppConfig:
                         config.mqtt_topic = str(data["mqtt_topic"])
                     if "mqtt_topic_indoor" in data:
                         config.mqtt_topic_indoor = data["mqtt_topic_indoor"] if data["mqtt_topic_indoor"] else None
+                    if "mqtt_additional_topics" in data:
+                        config.mqtt_additional_topics = [str(x) for x in data["mqtt_additional_topics"]]
                     if "cache_dir" in data:
                         config.cache_dir = str(data["cache_dir"])
                     if "database_path" in data:
@@ -92,6 +104,10 @@ def load_config() -> AppConfig:
     mqtt_topic_indoor_env = os.environ.get("DWD_MQTT_TOPIC_INDOOR")
     if mqtt_topic_indoor_env is not None:
         config.mqtt_topic_indoor = mqtt_topic_indoor_env if mqtt_topic_indoor_env else None
+
+    mqtt_additional_topics_env = os.environ.get("DWD_MQTT_ADDITIONAL_TOPICS")
+    if mqtt_additional_topics_env:
+        config.mqtt_additional_topics = [x.strip() for x in mqtt_additional_topics_env.split(",") if x.strip()]
 
     cache_dir_env = os.environ.get("DWD_CACHE_DIR")
     if cache_dir_env:

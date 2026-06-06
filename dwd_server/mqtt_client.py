@@ -16,7 +16,7 @@ from dwd_server.database import Database
 logger = logging.getLogger("dwd_server.mqtt")
 
 class MQTTManager:
-    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache"), history_filename: str = "mqtt_history.json", db: Database | None = None) -> None:
+    def __init__(self, host: str, port: int, topic: str | list[str], cache_dir: Path = Path("cache"), history_filename: str = "mqtt_history.json", db: Database | None = None) -> None:
         self.host = host
         self.port = port
         self.topic = topic
@@ -24,10 +24,14 @@ class MQTTManager:
         self.last_temp: float | None = None
         self.last_time: float | None = None
         
-        # Maps hour slot (e.g. "2026-06-02T08:00:00.000Z") to list of readings
-        self._raw_hourly: dict[str, list[float]] = {}
-        # Maps hour slot to average temperature
+        # Maps topic -> hour slot -> list of readings
+        self._raw_readings: dict[str, dict[str, list[float]]] = {}
+        # Maps topic -> hour slot -> average value
+        self.history_multi: dict[str, dict[str, float]] = {}
+        
+        self.primary_topic = topic[0] if isinstance(topic, list) else topic
         self.history: dict[str, float] = {}
+        self._raw_hourly: dict[str, list[float]] = {}
         
         self.history_file = cache_dir / history_filename
         self.lock = threading.Lock()
@@ -47,6 +51,9 @@ class MQTTManager:
                 self._raw_hourly = data.get("raw_hourly", {})
                 self.last_temp = data.get("last_temp")
                 self.last_time = data.get("last_time")
+                
+                self.history_multi = data.get("history_multi", {})
+                self._raw_readings = data.get("raw_readings", {})
             logger.info(f"Loaded MQTT history with {len(self.history)} 10-minute slots.")
         except Exception as e:
             logger.warning(f"Failed to load MQTT history from disk: {e}")
@@ -58,7 +65,9 @@ class MQTTManager:
                 "history": self.history,
                 "raw_hourly": self._raw_hourly,
                 "last_temp": self.last_temp,
-                "last_time": self.last_time
+                "last_time": self.last_time,
+                "history_multi": self.history_multi,
+                "raw_readings": self._raw_readings
             }
             with open(self.history_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
@@ -95,51 +104,73 @@ class MQTTManager:
 
     def _on_connect(self, client: mqtt.Client, userdata: typing.Any, flags: dict[str, typing.Any], rc: int, properties: typing.Any = None) -> None:
         logger.info(f"MQTT connected with result code: {rc}")
-        client.subscribe(self.topic)
-        logger.info(f"Subscribed to topic: {self.topic}")
+        if isinstance(self.topic, list):
+            for t in self.topic:
+                client.subscribe(t)
+                logger.info(f"Subscribed to topic: {t}")
+        else:
+            client.subscribe(self.topic)
+            logger.info(f"Subscribed to topic: {self.topic}")
 
     def _on_message(self, client: mqtt.Client, userdata: typing.Any, msg: mqtt.MQTTMessage) -> None:
         try:
             payload = msg.payload.decode('utf-8').strip()
-            temp = float(payload)
-            self.add_measurement(temp)
+            val = float(payload)
+            self.add_measurement(msg.topic, val)
         except ValueError:
             logger.warning(f"MQTT received invalid float payload on {msg.topic}: {msg.payload}")
         except Exception as e:
             logger.error(f"Error handling MQTT message: {e}")
 
-    def add_measurement(self, temp: float) -> None:
+    def add_measurement(self, topic: str, val: float) -> None:
         with self.lock:
             now = datetime.now(timezone.utc)
-            self.last_temp = temp
-            self.last_time = now.timestamp()
+            if topic == self.primary_topic:
+                self.last_temp = val
+                self.last_time = now.timestamp()
             
             # Format slot as "YYYY-MM-DDTHH:MM:00.000Z" (ISO 10-minute slot)
             minute_slot = (now.minute // 10) * 10
             slot = now.replace(minute=minute_slot, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:00.000Z")
             
-            # Record raw reading
-            if slot not in self._raw_hourly:
-                self._raw_hourly[slot] = []
-            self._raw_hourly[slot].append(temp)
+            # Multi-topic tracking
+            if topic not in self._raw_readings:
+                self._raw_readings[topic] = {}
+            if slot not in self._raw_readings[topic]:
+                self._raw_readings[topic][slot] = []
+            self._raw_readings[topic][slot].append(val)
             
-            # Downsample: Average the 10-minute slot readings
-            self.history[slot] = sum(self._raw_hourly[slot]) / len(self._raw_hourly[slot])
+            if topic not in self.history_multi:
+                self.history_multi[topic] = {}
+                
+            avg_val = sum(self._raw_readings[topic][slot]) / len(self._raw_readings[topic][slot])
+            self.history_multi[topic][slot] = avg_val
             
-            if self.db:
-                self.db.insert_sensor_reading(slot, self.topic, "temperature", self.history[slot])
-            
-            # Limit history to 288 slots (48 hours of 10-minute intervals)
-            if len(self.history) > 288:
-                # Sort slots and discard oldest
-                sorted_slots = sorted(self.history.keys())
-                while len(self.history) > 288:
+            # Sync to primary single-topic properties for backward compatibility
+            if topic == self.primary_topic:
+                self.history[slot] = avg_val
+                self._raw_hourly[slot] = self._raw_readings[topic][slot]
+                
+            # Limit history_multi[topic] to 288 slots (48 hours)
+            if len(self.history_multi[topic]) > 288:
+                sorted_slots = sorted(self.history_multi[topic].keys())
+                while len(self.history_multi[topic]) > 288:
                     old_slot = sorted_slots.pop(0)
-                    self.history.pop(old_slot, None)
-                    self._raw_hourly.pop(old_slot, None)
+                    self.history_multi[topic].pop(old_slot, None)
+                    self._raw_readings[topic].pop(old_slot, None)
                     
+            # Sync limits back to primary single-topic properties
+            if topic == self.primary_topic:
+                self.history = self.history_multi[topic]
+                self._raw_hourly = self._raw_readings[topic]
+                
+            if self.db:
+                # Metric name is the last component of the MQTT topic
+                metric = topic.split('/')[-1]
+                self.db.insert_sensor_reading(slot, topic, metric, avg_val)
+                
             self._save_history()
-            logger.debug(f"Added MQTT reading: {temp}°C for slot {slot} (total measurements in slot: {len(self._raw_hourly[slot])})")
+            logger.debug(f"Added MQTT reading: {val} for topic {topic} slot {slot}")
 
     def get_data(self) -> dict[str, typing.Any]:
         with self.lock:
