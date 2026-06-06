@@ -43,7 +43,7 @@ def fetch_and_store_mim_weather(database: Database) -> None:
         
         # Helper to find row values
         def get_row_value(html_str: str, row_label: str) -> float | None:
-            regex = r"<tr>\s*<td[^>]*>" + re.escape(row_label) + r"</td>\s*<td>(-?\d+\.?\d*)"
+            regex = r"<tr>\s*<td[^>]*>\s*" + re.escape(row_label) + r"\s*</td>\s*<td[^>]*>\s*(-?\d+\.?\d*)"
             match = re.search(regex, html_str, re.IGNORECASE)
             if match:
                 return float(match.group(1))
@@ -59,7 +59,7 @@ def fetch_and_store_mim_weather(database: Database) -> None:
         diffuse_rad = None
         atm_rad = None
         rad_match = re.search(
-            r"Globalstr\..*?Diffusstr\..*?Atm\.\s*Gegenstr\..*?</tr>\s*<tr>\s*<td>\s*(-?\d+\.?\d*)\s*W/m.*?<td>\s*(-?\d+\.?\d*)\s*W/m.*?<td>\s*(-?\d+\.?\d*)\s*W/m",
+            r"Globalstr\..*?Diffusstr\..*?Atm\.\s*Gegenstr\..*?</tr>\s*<tr>\s*<td[^>]*>\s*(-?\d+\.?\d*)\s*W/m.*?<td[^>]*>\s*(-?\d+\.?\d*)\s*W/m.*?<td[^>]*>\s*(-?\d+\.?\d*)\s*W/m",
             html,
             re.DOTALL
         )
