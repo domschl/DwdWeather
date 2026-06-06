@@ -595,9 +595,141 @@ function renderChartAndTable() {
   tempGradient.addColorStop(0, 'rgba(255, 94, 58, 0.4)');
   tempGradient.addColorStop(1, 'rgba(255, 42, 109, 0.0)');
   
-  // Custom plugin to draw a vertical dashed line at the closest timestep to 'now'
-  const currentLinePlugin = {
-    id: 'currentLine',
+  // Combined custom plugin for chart decorations (alternating day backgrounds and vertical "now" line)
+  const forecastDecorationPlugin = {
+    id: 'forecastDecoration',
+    beforeDatasetsDraw: (chart) => {
+      try {
+        const { ctx, chartArea, scales: { x: xScale } } = chart;
+        if (!chartArea || !xScale || !chart.data || !chart.data.labels || chart.data.labels.length === 0) return;
+        
+        const labels = chart.data.labels;
+        
+        // Group indices by calendar day in Europe/Berlin timezone
+        const dayGroups = {}; // dayStr -> { startIdx, endIdx }
+        for (let i = 0; i < labels.length; i++) {
+          const date = new Date(labels[i]);
+          if (isNaN(date.getTime())) continue;
+          const dayStr = date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD"
+          if (!(dayStr in dayGroups)) {
+            dayGroups[dayStr] = { startIdx: i, endIdx: i };
+          } else {
+            dayGroups[dayStr].endIdx = i;
+          }
+        }
+        
+        const uniqueDays = Object.keys(dayGroups).sort();
+        if (uniqueDays.length === 0) return;
+        
+        const getBerlinMidnight = (dayStr) => {
+          const [year, month, day] = dayStr.split('-').map(Number);
+          const d = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+          const format = d.toLocaleString('sv', { timeZone: 'Europe/Berlin' });
+          const match = format.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+          if (!match) return d;
+          
+          const localMs = Date.UTC(
+            parseInt(match[1]),
+            parseInt(match[2]) - 1,
+            parseInt(match[3]),
+            parseInt(match[4]),
+            parseInt(match[5]),
+            parseInt(match[6])
+          );
+          const offsetMs = localMs - d.getTime();
+          return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMs);
+        };
+
+        const getX = (i) => {
+          // 1. Try dataset element coordinate
+          const meta = chart.getDatasetMeta(1) || chart.getDatasetMeta(0);
+          if (meta && meta.data && meta.data[i] && typeof meta.data[i].x === 'number' && !isNaN(meta.data[i].x)) {
+            return meta.data[i].x;
+          }
+          // 2. Try scale's getPixelForValue with string
+          const label = labels[i];
+          let val = xScale.getPixelForValue(label);
+          if (typeof val === 'number' && !isNaN(val)) return val;
+          
+          // 3. Try scale's getPixelForValue with Date
+          const date = new Date(label);
+          if (!isNaN(date.getTime())) {
+            val = xScale.getPixelForValue(date);
+            if (typeof val === 'number' && !isNaN(val)) return val;
+            val = xScale.getPixelForValue(date.getTime());
+            if (typeof val === 'number' && !isNaN(val)) return val;
+          }
+          
+          // 4. Try scale's getPixelForTick
+          if (typeof xScale.getPixelForTick === 'function') {
+            val = xScale.getPixelForTick(i);
+            if (typeof val === 'number' && !isNaN(val)) return val;
+          }
+          
+          // 5. Fallback to linear interpolation
+          return chartArea.left + (chartArea.right - chartArea.left) * (i / (labels.length - 1 || 1));
+        };
+        
+        ctx.save();
+        
+        uniqueDays.forEach((dayStr, index) => {
+          const { startIdx, endIdx } = dayGroups[dayStr];
+          
+          // Alternating background colors - different shades of blue/indigo
+          if (index % 2 === 0) {
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.04)'; // Subtle light blue/indigo tint (4% opacity)
+          } else {
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.16)'; // Clearer blue/indigo tint (16% opacity)
+          }
+          
+          let xLeft, xRight;
+          
+          if (xScale.type === 'time') {
+            // Time scale: calculate boundaries exactly at 00:00 midnight local time
+            const tLeft = getBerlinMidnight(dayStr);
+            
+            // Add 1 day for right boundary
+            const [y, m, d] = dayStr.split('-').map(Number);
+            const nextDayDate = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0));
+            const nextDayStr = nextDayDate.toISOString().split('T')[0];
+            const tRight = getBerlinMidnight(nextDayStr);
+            
+            xLeft = xScale.getPixelForValue(tLeft.getTime());
+            xRight = xScale.getPixelForValue(tRight.getTime());
+          } else {
+            // Category scale: align boundaries exactly with the 00:00 tick index
+            xLeft = startIdx === 0 ? chartArea.left : getX(startIdx);
+            
+            const nextDayStr = uniqueDays[index + 1];
+            if (nextDayStr) {
+              const nextDayStartIdx = dayGroups[nextDayStr].startIdx;
+              xRight = getX(nextDayStartIdx);
+            } else {
+              xRight = chartArea.right;
+            }
+          }
+          
+          // Clamp boundaries
+          xLeft = Math.max(chartArea.left, Math.min(chartArea.right, xLeft));
+          xRight = Math.max(chartArea.left, Math.min(chartArea.right, xRight));
+          
+          const width = xRight - xLeft;
+          if (width > 0) {
+            ctx.fillRect(xLeft, chartArea.top, width, chartArea.bottom - chartArea.top);
+          }
+        });
+        
+        ctx.restore();
+      } catch (err) {
+        const { ctx, chartArea } = chart;
+        ctx.save();
+        ctx.fillStyle = '#ff0055';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText('Plugin Error: ' + err.message, (chartArea ? chartArea.left : 10) + 10, 30);
+        ctx.restore();
+        console.error('forecastDecoration plugin backgrounds error:', err);
+      }
+    },
     afterDraw: (chart) => {
       if (!data || !data.labels || data.labels.length === 0) return;
       
@@ -615,7 +747,7 @@ function renderChartAndTable() {
       
       if (closestIdx !== -1) {
         const meta = chart.getDatasetMeta(0);
-        if (meta && meta.data[closestIdx]) {
+        if (meta && meta.data && meta.data[closestIdx]) {
           const ctx = chart.ctx;
           const topY = chart.chartArea.top;
           const bottomY = chart.chartArea.bottom;
@@ -802,7 +934,7 @@ function renderChartAndTable() {
   
   weatherChart = new Chart(ctx, {
     type: 'bar',
-    plugins: [currentLinePlugin],
+    plugins: [forecastDecorationPlugin],
     data: {
       labels: data.labels,
       datasets: [
@@ -843,7 +975,7 @@ function renderChartAndTable() {
           pointRadius: currentViewMode === 'near' ? 2 : 1,
           pointBackgroundColor: '#ff2a6d',
           backgroundColor: tempGradient,
-          fill: true,
+          fill: false,
           yAxisID: 'y-temp',
           tension: 0.35,
           spanGaps: true,
@@ -948,18 +1080,30 @@ function renderChartAndTable() {
             unit: 'hour',
             stepSize: 6,
             displayFormats: {
-              hour: 'EEE HH:mm'
+              hour: 'EEE HH:mm',
+              day: 'EEE dd/MM',
+              week: 'EEE dd/MM',
+              month: 'MMM yyyy'
             }
           },
           grid: {
-            color: 'rgba(255, 255, 255, 0.03)'
+            color: 'rgba(255, 255, 255, 0.08)',
+            tickColor: 'rgba(255, 255, 255, 0.25)',
+            drawTicks: true,
+            offset: false
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
           },
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
             maxTicksLimit: 12,
             callback: function(value, index, ticks) {
-              const date = new Date(value);
+              const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
+              const date = new Date(tickVal);
+              if (isNaN(date.getTime())) return value;
               const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
               const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
               return `${weekday} ${time}`;
@@ -968,7 +1112,14 @@ function renderChartAndTable() {
         } : {
           type: 'category',
           grid: {
-            color: 'rgba(255, 255, 255, 0.03)'
+            color: 'rgba(255, 255, 255, 0.08)',
+            tickColor: 'rgba(255, 255, 255, 0.25)',
+            drawTicks: true,
+            offset: false
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
           },
           ticks: {
             color: '#8f9cae',
@@ -978,7 +1129,8 @@ function renderChartAndTable() {
               const labelStr = data.labels[index];
               if (!labelStr) return '';
               const date = new Date(labelStr);
-              const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' });
+              if (isNaN(date.getTime())) return labelStr;
+              const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' }).replace(',', '');
               const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
               return `${day} ${time}:00`;
             }
@@ -988,7 +1140,11 @@ function renderChartAndTable() {
           type: 'linear',
           position: 'left',
           grid: {
-            color: 'rgba(255, 255, 255, 0.05)'
+            color: 'rgba(255, 255, 255, 0.10)'
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
           },
           ticks: {
             color: '#ff5e3a',
@@ -1008,7 +1164,13 @@ function renderChartAndTable() {
           min: 0,
           max: 100,
           grid: {
-            drawOnChartArea: false // prevent grid overlaps
+            drawOnChartArea: false, // prevent grid overlaps
+            tickColor: '#00f2fe',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
           },
           ticks: {
             color: '#00f2fe',
@@ -1028,7 +1190,13 @@ function renderChartAndTable() {
           min: 0,
           max: 60,
           grid: {
-            drawOnChartArea: false
+            drawOnChartArea: false,
+            tickColor: '#ffb300',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
           },
           ticks: {
             color: '#ffb300',
