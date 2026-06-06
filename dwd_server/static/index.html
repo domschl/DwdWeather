@@ -156,6 +156,12 @@
             <button id="btn-preset-7d" class="preset-btn active" onclick="setHistoryRange(7)">Last 7 Days</button>
             <button id="btn-preset-30d" class="preset-btn" onclick="setHistoryRange(30)">Last 30 Days</button>
           </div>
+          <div class="history-metric-group-selector">
+            <button id="btn-group-temp_solar" class="group-btn active" onclick="switchHistoryGroup('temp_solar')">☀️ Temp & Solar</button>
+            <button id="btn-group-moisture" class="group-btn" onclick="switchHistoryGroup('moisture')">🌧️ Moisture & Rain</button>
+            <button id="btn-group-radiation" class="group-btn" onclick="switchHistoryGroup('radiation')">☢️ Radiation</button>
+            <button id="btn-group-pressure_magnetic" class="group-btn" onclick="switchHistoryGroup('pressure_magnetic')">🧲 Pressure & Magnetic</button>
+          </div>
           <div class="custom-range">
             <span class="range-label">Custom Range:</span>
             <label for="history-start">From</label>

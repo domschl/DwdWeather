@@ -4,6 +4,7 @@ let weatherData = null;
 let currentViewMode = 'near'; // 'near', 'extended', or 'history'
 let weatherChart = null;
 let historyData = null;
+let currentHistoryGroup = 'temp_solar'; // 'temp_solar', 'moisture', 'radiation', 'pressure_magnetic'
 
 document.addEventListener('DOMContentLoaded', () => {
   fetchForecast();
@@ -399,68 +400,122 @@ async function fetchHistoryData() {
   }
 }
 
+function getMetricKeyFromTopic(topic) {
+  if (topic.endsWith('/frequency')) return 'geiger_freq';
+  if (topic.endsWith('/pressureNN')) return 'pressure';
+  if (topic.endsWith('/humidity')) return 'humidity';
+  if (topic.endsWith('/illuminance')) return 'luminosity';
+  if (topic.endsWith('/magnetic_field_strength')) return 'magnetic';
+  if (topic.endsWith('/gamma10minavg')) return 'gamma_10m';
+  if (topic.endsWith('/gamma1minavg')) return 'gamma_1m';
+  if (topic.endsWith('/unitrain')) return 'rain_sensor';
+  return null;
+}
+
+function switchHistoryGroup(group) {
+  currentHistoryGroup = group;
+  const groups = ['temp_solar', 'moisture', 'radiation', 'pressure_magnetic'];
+  groups.forEach(g => {
+    const btn = document.getElementById(`btn-group-${g}`);
+    if (btn) {
+      btn.classList.toggle('active', g === group);
+    }
+  });
+  renderChartAndTable();
+}
+
 function getHistoricalFilteredData() {
   if (!historyData) return null;
   const hourlyMap = {};
   
-  (historyData.forecast || []).forEach(item => {
-    const d = new Date(item.time);
-    d.setMinutes(0, 0, 0);
-    const hourKey = d.toISOString();
+  function initHour(hourKey) {
     if (!hourlyMap[hourKey]) {
-      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
+      hourlyMap[hourKey] = {
+        forecast_temp: [],
+        forecast_sund: [],
+        forecast_wwp: [],
+        outdoor_temp: [],
+        indoor_temp: [],
+        geiger_freq: [],
+        pressure: [],
+        humidity: [],
+        luminosity: [],
+        magnetic: [],
+        gamma_10m: [],
+        gamma_1m: [],
+        rain_sensor: []
+      };
     }
-    if (item.val !== null) {
-      hourlyMap[hourKey].temps.push(item.val - 273.15); // convert forecast Kelvin to C
-    }
-  });
-  
-  (historyData.outdoor || []).forEach(item => {
-    const d = new Date(item.time);
-    d.setMinutes(0, 0, 0);
-    const hourKey = d.toISOString();
-    if (!hourlyMap[hourKey]) {
-      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
-    }
-    if (item.val !== null) {
-      hourlyMap[hourKey].outdoor.push(item.val);
-    }
-  });
-  
-  (historyData.indoor || []).forEach(item => {
-    const d = new Date(item.time);
-    d.setMinutes(0, 0, 0);
-    const hourKey = d.toISOString();
-    if (!hourlyMap[hourKey]) {
-      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
-    }
-    if (item.val !== null) {
-      hourlyMap[hourKey].indoor.push(item.val);
-    }
-  });
-  
+  }
+
+  function addToHourly(list, key, transform = (v) => v) {
+    if (!list) return;
+    list.forEach(item => {
+      if (item.val === null || item.val === undefined) return;
+      const d = new Date(item.time);
+      if (isNaN(d.getTime())) return;
+      d.setMinutes(0, 0, 0);
+      const hourKey = d.toISOString();
+      initHour(hourKey);
+      hourlyMap[hourKey][key].push(transform(item.val));
+    });
+  }
+
+  addToHourly(historyData.forecast, 'forecast_temp', (v) => v - 273.15); // convert forecast Kelvin to C
+  addToHourly(historyData.forecast_sund, 'forecast_sund', (v) => v / 60); // convert seconds to minutes
+  addToHourly(historyData.forecast_wwp, 'forecast_wwp');
+  addToHourly(historyData.outdoor, 'outdoor_temp');
+  addToHourly(historyData.indoor, 'indoor_temp');
+
+  if (historyData.additional) {
+    Object.entries(historyData.additional).forEach(([topic, list]) => {
+      const key = getMetricKeyFromTopic(topic);
+      if (key) {
+        addToHourly(list, key);
+      }
+    });
+  }
+
   const sortedHours = Object.keys(hourlyMap).sort();
   const result = {
     labels: [],
     temps: [],
     localTemps: [],
     indoorTemps: [],
-    sunDuration: Array(sortedHours.length).fill(null),
-    rainProb: Array(sortedHours.length).fill(null),
-    rainDuration: Array(sortedHours.length).fill(null),
-    rainAmount: Array(sortedHours.length).fill(null)
+    sunDuration: [],
+    rainProb: [],
+    geiger_freq: [],
+    pressure: [],
+    humidity: [],
+    luminosity: [],
+    magnetic: [],
+    gamma_10m: [],
+    gamma_1m: [],
+    rain_sensor: []
   };
-  
+
   sortedHours.forEach(hourStr => {
     result.labels.push(hourStr);
     const obj = hourlyMap[hourStr];
-    const avgForecast = obj.temps.length > 0 ? (obj.temps.reduce((a, b) => a + b, 0) / obj.temps.length) : null;
-    const avgOutdoor = obj.outdoor.length > 0 ? (obj.outdoor.reduce((a, b) => a + b, 0) / obj.outdoor.length) : null;
-    const avgIndoor = obj.indoor.length > 0 ? (obj.indoor.reduce((a, b) => a + b, 0) / obj.indoor.length) : null;
-    result.temps.push(avgForecast);
-    result.localTemps.push(avgOutdoor);
-    result.indoorTemps.push(avgIndoor);
+    
+    const avg = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+    
+    result.temps.push(avg(obj.forecast_temp));
+    result.localTemps.push(avg(obj.outdoor_temp));
+    result.indoorTemps.push(avg(obj.indoor_temp));
+    result.sunDuration.push(avg(obj.forecast_sund));
+    result.rainProb.push(avg(obj.forecast_wwp));
+    
+    result.geiger_freq.push(avg(obj.geiger_freq));
+    result.pressure.push(avg(obj.pressure));
+    result.humidity.push(avg(obj.humidity));
+    result.luminosity.push(avg(obj.luminosity));
+    result.magnetic.push(avg(obj.magnetic));
+    result.gamma_10m.push(avg(obj.gamma_10m));
+    result.gamma_1m.push(avg(obj.gamma_1m));
+    result.rain_sensor.push(avg(obj.rain_sensor));
   });
+
   return result;
 }
 
@@ -642,60 +697,111 @@ function getFilteredData() {
   
   return result;
 }
-
 // Render chart and populate data table
 function renderChartAndTable() {
   const data = getFilteredData();
   if (!data) return;
   
   // --- 1. Populate Table ---
+  const theadTr = document.querySelector('#forecast-data-table thead tr');
   const tbody = document.getElementById('forecast-table-body');
   tbody.innerHTML = '';
+  
+  let columns = [];
+  if (currentViewMode !== 'history') {
+    theadTr.innerHTML = `
+      <th>Time (Local)</th>
+      <th>Forecast Temp (°C)</th>
+      <th>Outdoor Sensor (°C)</th>
+      <th>Indoor Sensor (°C)</th>
+      <th>Precipitation Prob (%)</th>
+      <th>Precipitation Dur (min)</th>
+      <th>Precipitation Amt (mm)</th>
+      <th>Sunshine Dur (min)</th>
+    `;
+    columns = [
+      { name: 'time', format: formatLocalTime },
+      { name: 'temp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'localTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'indoorTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'rainProb', format: v => v !== null ? `${Math.round(v)} %` : '-' },
+      { name: 'rainDur', format: v => v !== null ? `${Math.round(v)} min` : '-' },
+      { name: 'rainAmt', format: v => v !== null ? `${v.toFixed(2)} mm` : '-' },
+      { name: 'sunDur', format: v => v !== null ? `${Math.round(v)} min` : '-' }
+    ];
+  } else {
+    if (currentHistoryGroup === 'temp_solar') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>Forecast Temp (°C)</th>
+        <th>Outdoor Temp (°C)</th>
+        <th>Indoor Temp (°C)</th>
+        <th>Sunshine Dur (min)</th>
+        <th>Luminosity (lux)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
+        { name: 'temp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'localTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'indoorTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+        { name: 'sunDur', format: v => v !== null ? `${Math.round(v)} min` : '-' },
+        { name: 'luminosity', format: v => v !== null ? `${v.toFixed(1)} lx` : '-' }
+      ];
+    } else if (currentHistoryGroup === 'moisture') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>Outdoor Humidity (%)</th>
+        <th>Forecast Rain Prob (%)</th>
+        <th>Rain Sensor (mm)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
+        { name: 'humidity', format: v => v !== null ? `${Math.round(v)} %` : '-' },
+        { name: 'rainProb', format: v => v !== null ? `${Math.round(v)} %` : '-' },
+        { name: 'rain_sensor', format: v => v !== null ? `${v.toFixed(2)} mm` : '-' }
+      ];
+    } else if (currentHistoryGroup === 'radiation') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>Geiger Freq (Hz)</th>
+        <th>Gamma 10min Avg (μSv/h)</th>
+        <th>Gamma 1min Avg (μSv/h)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
+        { name: 'geiger_freq', format: v => v !== null ? `${v.toFixed(2)} Hz` : '-' },
+        { name: 'gamma_10m', format: v => v !== null ? `${v.toFixed(3)} μSv/h` : '-' },
+        { name: 'gamma_1m', format: v => v !== null ? `${v.toFixed(3)} μSv/h` : '-' }
+      ];
+    } else if (currentHistoryGroup === 'pressure_magnetic') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>Air Pressure (hPa)</th>
+        <th>Magnetic Field (nT)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
+        { name: 'pressure', format: v => v !== null ? `${v.toFixed(1)} hPa` : '-' },
+        { name: 'magnetic', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
+      ];
+    }
+  }
   
   document.getElementById('table-row-count').textContent = `Showing ${data.labels.length} data steps`;
   
   data.labels.forEach((timeStr, idx) => {
     const tr = document.createElement('tr');
-    
-    const tdTime = document.createElement('td');
-    tdTime.textContent = formatLocalTime(timeStr);
-    tr.appendChild(tdTime);
-    
-    const tdTemp = document.createElement('td');
-    const t = data.temps[idx];
-    tdTemp.textContent = t !== null ? `${t.toFixed(1)} °C` : '-';
-    tr.appendChild(tdTemp);
-
-    const tdLocalTemp = document.createElement('td');
-    const lt = data.localTemps[idx];
-    tdLocalTemp.textContent = lt !== null ? `${lt.toFixed(1)} °C` : '-';
-    tr.appendChild(tdLocalTemp);
-
-    const tdIndoorTemp = document.createElement('td');
-    const it = data.indoorTemps[idx];
-    tdIndoorTemp.textContent = it !== null ? `${it.toFixed(1)} °C` : '-';
-    tr.appendChild(tdIndoorTemp);
-    
-    const tdRainProb = document.createElement('td');
-    const rp = data.rainProb[idx];
-    tdRainProb.textContent = rp !== null ? `${Math.round(rp)} %` : '-';
-    tr.appendChild(tdRainProb);
-    
-    const tdRainDur = document.createElement('td');
-    const rd = data.rainDuration[idx];
-    tdRainDur.textContent = rd !== null ? `${Math.round(rd)} min` : '-';
-    tr.appendChild(tdRainDur);
-    
-    const tdRainAmt = document.createElement('td');
-    const ra = data.rainAmount[idx];
-    tdRainAmt.textContent = ra !== null ? `${ra.toFixed(2)} mm` : '-';
-    tr.appendChild(tdRainAmt);
-    
-    const tdSun = document.createElement('td');
-    const s = data.sunDuration[idx];
-    tdSun.textContent = s !== null ? `${Math.round(s)} min` : '-';
-    tr.appendChild(tdSun);
-    
+    columns.forEach(col => {
+      const td = document.createElement('td');
+      let val;
+      if (col.name === 'time') {
+        val = timeStr;
+      } else {
+        val = data[col.name][idx];
+      }
+      td.textContent = col.format(val);
+      tr.appendChild(td);
+    });
     tbody.appendChild(tr);
   });
   
@@ -707,19 +813,6 @@ function renderChartAndTable() {
     weatherChart.destroy();
   }
   
-  const displayLabels = data.labels.map(isoStr => {
-    const date = new Date(isoStr);
-    if (currentViewMode === 'near') {
-      const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
-      const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-      return `${weekday} ${time}`;
-    } else {
-      const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' });
-      const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-      return `${day} ${time}:00`;
-    }
-  });
-
   // Create neon gradients for the chart
   const tempGradient = ctx.createLinearGradient(0, 0, 0, 350);
   tempGradient.addColorStop(0, 'rgba(255, 94, 58, 0.4)');
@@ -944,7 +1037,7 @@ function renderChartAndTable() {
             ctx.moveTo(x, topY);
             ctx.lineTo(x, bottomY);
             ctx.stroke();
-
+            
             const yTempScale = chart.scales['y-temp'];
             
             // Draw glowing dot for the interpolated forecast temperature on the vertical line
@@ -1063,54 +1156,52 @@ function renderChartAndTable() {
     }
   };
   
-  const chartDatasets = [
-    {
-      type: 'line',
-      label: 'Outdoor Temp (°C)',
-      data: data.localTemps,
-      borderColor: '#00ff66', // Neon green
-      borderWidth: 2,
-      pointRadius: 0, // No markers/dots
-      pointHitRadius: 10,
-      fill: false,
-      yAxisID: 'y-temp',
-      tension: 0.3,
-      spanGaps: true,
-      order: 0 // Draw on top
-    },
-    {
-      type: 'line',
-      label: 'Indoor Temp (°C)',
-      data: data.indoorTemps,
-      borderColor: '#ff00f0', // Neon pink
-      borderWidth: 2,
-      pointRadius: 0, // No markers/dots
-      pointHitRadius: 10,
-      fill: false,
-      yAxisID: 'y-temp',
-      tension: 0.3,
-      spanGaps: true,
-      order: 0 // Draw on top
-    },
-    {
-      type: 'line',
-      label: currentViewMode === 'history' ? 'Forecast Temp (°C)' : 'Temperature (°C)',
-      data: data.temps,
-      borderColor: '#ff5e3a',
-      borderWidth: 3,
-      pointRadius: (currentViewMode === 'near') ? 2 : 1,
-      pointBackgroundColor: '#ff2a6d',
-      backgroundColor: tempGradient,
-      fill: currentViewMode !== 'history',
-      yAxisID: 'y-temp',
-      tension: 0.35,
-      spanGaps: true,
-      order: 1
-    }
-  ];
-
+  let chartDatasets = [];
   if (currentViewMode !== 'history') {
-    chartDatasets.push(
+    chartDatasets = [
+      {
+        type: 'line',
+        label: 'Outdoor Temp (°C)',
+        data: data.localTemps,
+        borderColor: '#00ff66',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHitRadius: 10,
+        fill: false,
+        yAxisID: 'y-temp',
+        tension: 0.3,
+        spanGaps: true,
+        order: 0
+      },
+      {
+        type: 'line',
+        label: 'Indoor Temp (°C)',
+        data: data.indoorTemps,
+        borderColor: '#ff00f0',
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHitRadius: 10,
+        fill: false,
+        yAxisID: 'y-temp',
+        tension: 0.3,
+        spanGaps: true,
+        order: 0
+      },
+      {
+        type: 'line',
+        label: 'Temperature (°C)',
+        data: data.temps,
+        borderColor: '#ff5e3a',
+        borderWidth: 3,
+        pointRadius: (currentViewMode === 'near') ? 2 : 1,
+        pointBackgroundColor: '#ff2a6d',
+        backgroundColor: tempGradient,
+        fill: true,
+        yAxisID: 'y-temp',
+        tension: 0.35,
+        spanGaps: true,
+        order: 1
+      },
       {
         type: 'bar',
         label: 'Precipitation Prob (%)',
@@ -1133,7 +1224,197 @@ function renderChartAndTable() {
         barThickness: 8,
         order: 2
       }
-    );
+    ];
+  } else {
+    if (currentHistoryGroup === 'temp_solar') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'Outdoor Temp (°C)',
+          data: data.localTemps,
+          borderColor: '#00ff66',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Indoor Temp (°C)',
+          data: data.indoorTemps,
+          borderColor: '#ff00f0',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Forecast Temp (°C)',
+          data: data.temps,
+          borderColor: '#ff5e3a',
+          borderWidth: 3,
+          pointRadius: 1,
+          pointBackgroundColor: '#ff2a6d',
+          fill: false,
+          yAxisID: 'y-temp',
+          tension: 0.35,
+          spanGaps: true,
+          order: 1
+        },
+        {
+          type: 'bar',
+          label: 'Sunshine Duration (min/h)',
+          data: data.sunDuration,
+          backgroundColor: 'rgba(255, 179, 0, 0.35)',
+          borderColor: '#ffb300',
+          borderWidth: 1,
+          yAxisID: 'y-sun',
+          barThickness: 8,
+          order: 2
+        },
+        {
+          type: 'line',
+          label: 'Luminosity (lux)',
+          data: data.luminosity,
+          borderColor: '#00f2fe',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-lux',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        }
+      ];
+    } else if (currentHistoryGroup === 'moisture') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'Outdoor Humidity (%)',
+          data: data.humidity,
+          borderColor: '#00f2fe',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-pct',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Forecast Rain Prob (%)',
+          data: data.rainProb,
+          borderColor: '#3b82f6',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-pct',
+          tension: 0.3,
+          spanGaps: true,
+          order: 1
+        },
+        {
+          type: 'bar',
+          label: 'Rain Sensor (mm)',
+          data: data.rain_sensor,
+          backgroundColor: 'rgba(99, 102, 241, 0.45)',
+          borderColor: '#6366f1',
+          borderWidth: 1,
+          yAxisID: 'y-rain',
+          barThickness: 8,
+          order: 2
+        }
+      ];
+    } else if (currentHistoryGroup === 'radiation') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'Geiger Freq (Hz)',
+          data: data.geiger_freq,
+          borderColor: '#ff00f0',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-freq',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Gamma 10min Avg (μSv/h)',
+          data: data.gamma_10m,
+          borderColor: '#00ff66',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-rad',
+          tension: 0.3,
+          spanGaps: true,
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Gamma 1min Avg (μSv/h)',
+          data: data.gamma_1m,
+          borderColor: '#a855f7',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-rad',
+          tension: 0.3,
+          spanGaps: true,
+          order: 2
+        }
+      ];
+    } else if (currentHistoryGroup === 'pressure_magnetic') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'Air Pressure (hPa)',
+          data: data.pressure,
+          borderColor: '#00f2fe',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-press',
+          tension: 0.3,
+          spanGaps: true,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Magnetic Field Strength (nT)',
+          data: data.magnetic,
+          borderColor: '#ff5e3a',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag',
+          tension: 0.3,
+          spanGaps: true,
+          order: 1
+        }
+      ];
+    }
   }
 
   weatherChart = new Chart(ctx, {
@@ -1197,13 +1478,28 @@ function renderChartAndTable() {
               if (label) {
                 label += ': ';
               }
-              if (context.parsed.y !== null) {
-                if (context.dataset.label.includes('Temp')) {
-                  label += context.parsed.y.toFixed(1) + ' °C';
-                } else if (context.dataset.label.includes('Precipitation')) {
-                  label += Math.round(context.parsed.y) + ' %';
+              const val = context.parsed.y;
+              if (val !== null && val !== undefined) {
+                if (label.includes('Temp')) {
+                  label += val.toFixed(1) + ' °C';
+                } else if (label.includes('Humidity') || label.includes('Prob')) {
+                  label += Math.round(val) + ' %';
+                } else if (label.includes('Duration')) {
+                  label += Math.round(val) + ' min';
+                } else if (label.includes('Luminosity')) {
+                  label += val.toFixed(1) + ' lx';
+                } else if (label.includes('Rain Sensor')) {
+                  label += val.toFixed(2) + ' mm';
+                } else if (label.includes('Geiger')) {
+                  label += val.toFixed(2) + ' Hz';
+                } else if (label.includes('Gamma')) {
+                  label += val.toFixed(3) + ' μSv/h';
+                } else if (label.includes('Pressure')) {
+                  label += val.toFixed(1) + ' hPa';
+                } else if (label.includes('Magnetic')) {
+                  label += val.toFixed(1) + ' nT';
                 } else {
-                  label += Math.round(context.parsed.y) + ' min';
+                  label += val;
                 }
               }
               return label;
@@ -1280,6 +1576,7 @@ function renderChartAndTable() {
         'y-temp': {
           type: 'linear',
           position: 'left',
+          display: currentViewMode !== 'history' || currentHistoryGroup === 'temp_solar',
           grid: {
             color: 'rgba(255, 255, 255, 0.10)'
           },
@@ -1301,18 +1598,17 @@ function renderChartAndTable() {
         },
         'y-pct': {
           type: 'linear',
-          position: 'right',
+          position: 'left',
           min: 0,
           max: 100,
-          display: currentViewMode !== 'history',
+          display: currentViewMode !== 'history' || currentHistoryGroup === 'moisture',
           grid: {
-            drawOnChartArea: false, // prevent grid overlaps
-            tickColor: '#00f2fe',
-            drawTicks: true
+            color: 'rgba(255, 255, 255, 0.10)',
+            drawOnChartArea: currentViewMode === 'history'
           },
           border: {
             color: 'rgba(255, 255, 255, 0.15)',
-            display: currentViewMode !== 'history'
+            display: true
           },
           ticks: {
             color: '#00f2fe',
@@ -1320,8 +1616,8 @@ function renderChartAndTable() {
             callback: value => `${value}%`
           },
           title: {
-            display: currentViewMode !== 'history',
-            text: 'Rain Probability',
+            display: true,
+            text: currentViewMode === 'history' ? 'Humidity / Rain Prob' : 'Rain Probability',
             color: '#00f2fe',
             font: { family: 'Outfit', weight: 500 }
           }
@@ -1331,7 +1627,7 @@ function renderChartAndTable() {
           position: 'right',
           min: 0,
           max: 60,
-          display: currentViewMode !== 'history',
+          display: currentViewMode !== 'history' || currentHistoryGroup === 'temp_solar',
           grid: {
             drawOnChartArea: false,
             tickColor: '#ffb300',
@@ -1339,7 +1635,7 @@ function renderChartAndTable() {
           },
           border: {
             color: 'rgba(255, 255, 255, 0.15)',
-            display: currentViewMode !== 'history'
+            display: true
           },
           ticks: {
             color: '#ffb300',
@@ -1347,9 +1643,157 @@ function renderChartAndTable() {
             callback: value => `${value}m`
           },
           title: {
-            display: currentViewMode !== 'history',
+            display: true,
             text: 'Sunshine Duration',
             color: '#ffb300',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-lux': {
+          type: 'linear',
+          position: 'right',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'temp_solar',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#00f2fe',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#00f2fe',
+            font: { family: 'Outfit' },
+            callback: value => `${value} lx`
+          },
+          title: {
+            display: true,
+            text: 'Luminosity',
+            color: '#00f2fe',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-rain': {
+          type: 'linear',
+          position: 'right',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'moisture',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#6366f1',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#6366f1',
+            font: { family: 'Outfit' },
+            callback: value => `${value} mm`
+          },
+          title: {
+            display: true,
+            text: 'Rain Sensor',
+            color: '#6366f1',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-rad': {
+          type: 'linear',
+          position: 'left',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'radiation',
+          grid: {
+            color: 'rgba(255, 255, 255, 0.10)',
+            drawOnChartArea: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#00ff66',
+            font: { family: 'Outfit' },
+            callback: value => `${value} μSv/h`
+          },
+          title: {
+            display: true,
+            text: 'Radiation',
+            color: '#00ff66',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-freq': {
+          type: 'linear',
+          position: 'right',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'radiation',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#ff00f0',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#ff00f0',
+            font: { family: 'Outfit' },
+            callback: value => `${value} Hz`
+          },
+          title: {
+            display: true,
+            text: 'Geiger Frequency',
+            color: '#ff00f0',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-press': {
+          type: 'linear',
+          position: 'left',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          grid: {
+            color: 'rgba(255, 255, 255, 0.10)',
+            drawOnChartArea: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#00f2fe',
+            font: { family: 'Outfit' },
+            callback: value => `${value} hPa`
+          },
+          title: {
+            display: true,
+            text: 'Air Pressure',
+            color: '#00f2fe',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-mag': {
+          type: 'linear',
+          position: 'right',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#ff5e3a',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#ff5e3a',
+            font: { family: 'Outfit' },
+            callback: value => `${value} nT`
+          },
+          title: {
+            display: true,
+            text: 'Magnetic Field',
+            color: '#ff5e3a',
             font: { family: 'Outfit', weight: 500 }
           }
         }
