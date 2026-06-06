@@ -11,14 +11,16 @@ try:
 except ImportError:
     has_v2_api = False
 import paho.mqtt.client as mqtt
+from dwd_server.database import Database
 
 logger = logging.getLogger("dwd_server.mqtt")
 
 class MQTTManager:
-    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache"), history_filename: str = "mqtt_history.json") -> None:
+    def __init__(self, host: str, port: int, topic: str, cache_dir: Path = Path("cache"), history_filename: str = "mqtt_history.json", db: Database | None = None) -> None:
         self.host = host
         self.port = port
         self.topic = topic
+        self.db = db
         self.last_temp: float | None = None
         self.last_time: float | None = None
         
@@ -123,6 +125,9 @@ class MQTTManager:
             
             # Downsample: Average the 10-minute slot readings
             self.history[slot] = sum(self._raw_hourly[slot]) / len(self._raw_hourly[slot])
+            
+            if self.db:
+                self.db.insert_sensor_reading(slot, self.topic, "temperature", self.history[slot])
             
             # Limit history to 288 slots (48 hours of 10-minute intervals)
             if len(self.history) > 288:

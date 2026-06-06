@@ -13,6 +13,7 @@ import uvicorn
 from dwd_server.config import load_config, AppConfig
 from dwd_server.parser import fetch_and_parse, WeatherForecast
 from dwd_server.mqtt_client import MQTTManager
+from dwd_server.database import Database
 
 # Set up logging
 logging.basicConfig(
@@ -22,6 +23,8 @@ logging.basicConfig(
 logger = logging.getLogger("dwd_server.main")
 
 config:AppConfig = load_config()
+
+db = Database(config.database_path)
 
 # Cache structures
 CACHE_DIR = Path(config.cache_dir)
@@ -35,7 +38,8 @@ if config.mqtt_host:
         port=config.mqtt_port,
         topic=config.mqtt_topic,
         cache_dir=CACHE_DIR,
-        history_filename="mqtt_history.json"
+        history_filename="mqtt_history.json",
+        db=db
     )
     if config.mqtt_topic_indoor:
         mqtt_manager_indoor = MQTTManager(
@@ -43,7 +47,8 @@ if config.mqtt_host:
             port=config.mqtt_port,
             topic=config.mqtt_topic_indoor,
             cache_dir=CACHE_DIR,
-            history_filename="mqtt_history_indoor.json"
+            history_filename="mqtt_history_indoor.json",
+            db=db
         )
 
 app = FastAPI(
@@ -106,6 +111,7 @@ def write_cache_to_disk(forecast: WeatherForecast) -> None:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info(f"Cached forecast for station {forecast.station_id} written to disk.")
+        db.insert_forecast_readings(forecast.station_id, forecast.timesteps, forecast.elements)
     except Exception as e:
         logger.error(f"Failed to write cache to disk: {e}")
 
@@ -194,6 +200,24 @@ def get_forecast() -> dict[str, Any]:
 def refresh_forecast() -> dict[str, Any]:
     return get_forecast_data(force_refresh=True)
 
+@app.get("/api/history")
+def get_history(start: str, end: str) -> dict[str, Any]:
+    outdoor_history = []
+    if config.mqtt_topic:
+        outdoor_history = db.get_sensor_history(config.mqtt_topic, "temperature", start, end)
+        
+    indoor_history = []
+    if config.mqtt_topic_indoor:
+        indoor_history = db.get_sensor_history(config.mqtt_topic_indoor, "temperature", start, end)
+        
+    forecast_history = db.get_forecast_history(config.station_id, "TTT", start, end)
+    
+    return {
+        "outdoor": outdoor_history,
+        "indoor": indoor_history,
+        "forecast": forecast_history
+    }
+
 @app.get("/api/config")
 def get_current_config() -> dict[str, Any]:
     return {
@@ -214,6 +238,11 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 def run() -> None:
     # Ensure cache directory is ready on startup
     ensure_cache_dir()
+    
+    # Seed database from existing cache if available
+    cache = load_cache_from_disk()
+    if cache:
+        db.insert_forecast_readings(cache.forecast.station_id, cache.forecast.timesteps, cache.forecast.elements)
     
     if mqtt_manager:
         mqtt_manager.start()

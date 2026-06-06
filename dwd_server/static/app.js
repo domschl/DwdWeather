@@ -1,8 +1,9 @@
 // DWD Weather Hub Modern Frontend Controller
 
 let weatherData = null;
-let currentViewMode = 'near'; // 'near' or 'extended'
+let currentViewMode = 'near'; // 'near', 'extended', or 'history'
 let weatherChart = null;
+let historyData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   fetchForecast();
@@ -326,15 +327,141 @@ function updateDashboard() {
   renderChartAndTable();
 }
 
-// Switch between Near-term (48h detailed) and Extended (10d downsampled)
+// Switch between Near-term (48h detailed), Extended (10d downsampled), or History
 function switchViewMode(mode) {
   currentViewMode = mode;
   
   // Update Tab active style
   document.getElementById('btn-tab-near').classList.toggle('active', mode === 'near');
   document.getElementById('btn-tab-extended').classList.toggle('active', mode === 'extended');
+  document.getElementById('btn-tab-history').classList.toggle('active', mode === 'history');
   
-  renderChartAndTable();
+  const historyControls = document.getElementById('history-controls');
+  if (mode === 'history') {
+    historyControls.style.display = 'flex';
+    const startInput = document.getElementById('history-start');
+    const endInput = document.getElementById('history-end');
+    if (!startInput.value || !endInput.value) {
+      setHistoryRange(7);
+    } else {
+      fetchHistoryData();
+    }
+  } else {
+    historyControls.style.display = 'none';
+    renderChartAndTable();
+  }
+}
+
+function setHistoryRange(days) {
+  document.getElementById('btn-preset-7d').classList.toggle('active', days === 7);
+  document.getElementById('btn-preset-30d').classList.toggle('active', days === 30);
+  
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days);
+  
+  const startStr = start.toISOString().split('T')[0];
+  const endStr = end.toISOString().split('T')[0];
+  
+  document.getElementById('history-start').value = startStr;
+  document.getElementById('history-end').value = endStr;
+  
+  fetchHistoryData();
+}
+
+function onCustomHistoryChange() {
+  document.getElementById('btn-preset-7d').classList.remove('active');
+  document.getElementById('btn-preset-30d').classList.remove('active');
+  fetchHistoryData();
+}
+
+async function fetchHistoryData() {
+  const startVal = document.getElementById('history-start').value;
+  const endVal = document.getElementById('history-end').value;
+  if (!startVal || !endVal) return;
+  
+  setLoadingState(true);
+  try {
+    const startDate = new Date(startVal + 'T00:00:00Z');
+    const endDate = new Date(endVal + 'T23:59:59Z');
+    
+    const response = await fetch(`/api/history?start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status}`);
+    }
+    historyData = await response.json();
+    renderChartAndTable();
+  } catch (error) {
+    console.error('Error fetching history:', error);
+    alert(`Failed to load historical data: ${error.message}`);
+  } finally {
+    setLoadingState(false);
+  }
+}
+
+function getHistoricalFilteredData() {
+  if (!historyData) return null;
+  const hourlyMap = {};
+  
+  (historyData.forecast || []).forEach(item => {
+    const d = new Date(item.time);
+    d.setMinutes(0, 0, 0);
+    const hourKey = d.toISOString();
+    if (!hourlyMap[hourKey]) {
+      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
+    }
+    if (item.val !== null) {
+      hourlyMap[hourKey].temps.push(item.val - 273.15); // convert forecast Kelvin to C
+    }
+  });
+  
+  (historyData.outdoor || []).forEach(item => {
+    const d = new Date(item.time);
+    d.setMinutes(0, 0, 0);
+    const hourKey = d.toISOString();
+    if (!hourlyMap[hourKey]) {
+      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
+    }
+    if (item.val !== null) {
+      hourlyMap[hourKey].outdoor.push(item.val);
+    }
+  });
+  
+  (historyData.indoor || []).forEach(item => {
+    const d = new Date(item.time);
+    d.setMinutes(0, 0, 0);
+    const hourKey = d.toISOString();
+    if (!hourlyMap[hourKey]) {
+      hourlyMap[hourKey] = { temps: [], outdoor: [], indoor: [] };
+    }
+    if (item.val !== null) {
+      hourlyMap[hourKey].indoor.push(item.val);
+    }
+  });
+  
+  const sortedHours = Object.keys(hourlyMap).sort();
+  const result = {
+    labels: [],
+    temps: [],
+    localTemps: [],
+    indoorTemps: [],
+    sunDuration: Array(sortedHours.length).fill(null),
+    rainProb: Array(sortedHours.length).fill(null),
+    rainDuration: Array(sortedHours.length).fill(null),
+    rainAmount: Array(sortedHours.length).fill(null)
+  };
+  
+  sortedHours.forEach(hourStr => {
+    result.labels.push(hourStr);
+    const obj = hourlyMap[hourStr];
+    const avgForecast = obj.temps.length > 0 ? (obj.temps.reduce((a, b) => a + b, 0) / obj.temps.length) : null;
+    const avgOutdoor = obj.outdoor.length > 0 ? (obj.outdoor.reduce((a, b) => a + b, 0) / obj.outdoor.length) : null;
+    const avgIndoor = obj.indoor.length > 0 ? (obj.indoor.reduce((a, b) => a + b, 0) / obj.indoor.length) : null;
+    result.temps.push(avgForecast);
+    result.localTemps.push(avgOutdoor);
+    result.indoorTemps.push(avgIndoor);
+  });
+  return result;
 }
 
 // Filters and formats datasets based on the selected view mode
@@ -358,6 +485,9 @@ function getLocalTempForHour(isoTime, mqttHistory) {
 
 // Filters and formats datasets based on the selected view mode
 function getFilteredData() {
+  if (currentViewMode === 'history') {
+    return getHistoricalFilteredData();
+  }
   if (!weatherData || !weatherData.forecast) return null;
   
   const fc = weatherData.forecast;
@@ -731,6 +861,7 @@ function renderChartAndTable() {
       }
     },
     afterDraw: (chart) => {
+      if (currentViewMode === 'history') return;
       if (!data || !data.labels || data.labels.length === 0) return;
       
       const now = new Date();
@@ -932,78 +1063,85 @@ function renderChartAndTable() {
     }
   };
   
+  const chartDatasets = [
+    {
+      type: 'line',
+      label: 'Outdoor Temp (°C)',
+      data: data.localTemps,
+      borderColor: '#00ff66', // Neon green
+      borderWidth: 2,
+      pointRadius: 0, // No markers/dots
+      pointHitRadius: 10,
+      fill: false,
+      yAxisID: 'y-temp',
+      tension: 0.3,
+      spanGaps: true,
+      order: 0 // Draw on top
+    },
+    {
+      type: 'line',
+      label: 'Indoor Temp (°C)',
+      data: data.indoorTemps,
+      borderColor: '#ff00f0', // Neon pink
+      borderWidth: 2,
+      pointRadius: 0, // No markers/dots
+      pointHitRadius: 10,
+      fill: false,
+      yAxisID: 'y-temp',
+      tension: 0.3,
+      spanGaps: true,
+      order: 0 // Draw on top
+    },
+    {
+      type: 'line',
+      label: currentViewMode === 'history' ? 'Forecast Temp (°C)' : 'Temperature (°C)',
+      data: data.temps,
+      borderColor: '#ff5e3a',
+      borderWidth: 3,
+      pointRadius: (currentViewMode === 'near') ? 2 : 1,
+      pointBackgroundColor: '#ff2a6d',
+      backgroundColor: tempGradient,
+      fill: currentViewMode !== 'history',
+      yAxisID: 'y-temp',
+      tension: 0.35,
+      spanGaps: true,
+      order: 1
+    }
+  ];
+
+  if (currentViewMode !== 'history') {
+    chartDatasets.push(
+      {
+        type: 'bar',
+        label: 'Precipitation Prob (%)',
+        data: data.rainProb,
+        backgroundColor: 'rgba(0, 242, 254, 0.3)',
+        borderColor: '#00f2fe',
+        borderWidth: 1,
+        yAxisID: 'y-pct',
+        barThickness: 8,
+        order: 3
+      },
+      {
+        type: 'bar',
+        label: 'Sunshine Duration (min/h)',
+        data: data.sunDuration,
+        backgroundColor: 'rgba(255, 179, 0, 0.45)',
+        borderColor: '#ffb300',
+        borderWidth: 1,
+        yAxisID: 'y-sun',
+        barThickness: 8,
+        order: 2
+      }
+    );
+  }
+
   weatherChart = new Chart(ctx, {
     type: 'bar',
     plugins: [forecastDecorationPlugin],
     data: {
       labels: data.labels,
-      datasets: [
-        {
-          type: 'line',
-          label: 'Outdoor Temp (°C)',
-          data: data.localTemps,
-          borderColor: '#00ff66', // Neon green
-          borderWidth: 2,
-          pointRadius: 0, // No markers/dots
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-temp',
-          tension: 0.3,
-          spanGaps: true,
-          order: 0 // Draw on top
-        },
-        {
-          type: 'line',
-          label: 'Indoor Temp (°C)',
-          data: data.indoorTemps,
-          borderColor: '#ff00f0', // Neon pink
-          borderWidth: 2,
-          pointRadius: 0, // No markers/dots
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-temp',
-          tension: 0.3,
-          spanGaps: true,
-          order: 0 // Draw on top
-        },
-        {
-          type: 'line',
-          label: 'Temperature (°C)',
-          data: data.temps,
-          borderColor: '#ff5e3a',
-          borderWidth: 3,
-          pointRadius: currentViewMode === 'near' ? 2 : 1,
-          pointBackgroundColor: '#ff2a6d',
-          backgroundColor: tempGradient,
-          fill: false,
-          yAxisID: 'y-temp',
-          tension: 0.35,
-          spanGaps: true,
-          order: 1
-        },
-        {
-          type: 'bar',
-          label: 'Precipitation Prob (%)',
-          data: data.rainProb,
-          backgroundColor: 'rgba(0, 242, 254, 0.3)',
-          borderColor: '#00f2fe',
-          borderWidth: 1,
-          yAxisID: 'y-pct',
-          barThickness: 8,
-          order: 3
-        },
-        {
-          type: 'bar',
-          label: 'Sunshine Duration (min/h)',
-          data: data.sunDuration,
-          backgroundColor: 'rgba(255, 179, 0, 0.45)',
-          borderColor: '#ffb300',
-          borderWidth: 1,
-          yAxisID: 'y-sun',
-          barThickness: 8,
-          order: 2
-        }
-      ]
+      datasets: chartDatasets
     },
     options: {
       responsive: true,
@@ -1074,11 +1212,11 @@ function renderChartAndTable() {
         }
       },
       scales: {
-        x: (currentViewMode === 'near') ? {
+        x: (currentViewMode === 'near' || currentViewMode === 'history') ? {
           type: 'time',
           time: {
-            unit: 'hour',
-            stepSize: 6,
+            unit: currentViewMode === 'history' ? 'day' : 'hour',
+            stepSize: currentViewMode === 'history' ? 1 : 6,
             displayFormats: {
               hour: 'EEE HH:mm',
               day: 'EEE dd/MM',
@@ -1099,11 +1237,14 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
-            maxTicksLimit: 12,
+            maxTicksLimit: currentViewMode === 'history' ? 10 : 12,
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
               const date = new Date(tickVal);
               if (isNaN(date.getTime())) return value;
+              if (currentViewMode === 'history') {
+                return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' });
+              }
               const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
               const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
               return `${weekday} ${time}`;
@@ -1163,6 +1304,7 @@ function renderChartAndTable() {
           position: 'right',
           min: 0,
           max: 100,
+          display: currentViewMode !== 'history',
           grid: {
             drawOnChartArea: false, // prevent grid overlaps
             tickColor: '#00f2fe',
@@ -1170,7 +1312,7 @@ function renderChartAndTable() {
           },
           border: {
             color: 'rgba(255, 255, 255, 0.15)',
-            display: true
+            display: currentViewMode !== 'history'
           },
           ticks: {
             color: '#00f2fe',
@@ -1178,7 +1320,7 @@ function renderChartAndTable() {
             callback: value => `${value}%`
           },
           title: {
-            display: true,
+            display: currentViewMode !== 'history',
             text: 'Rain Probability',
             color: '#00f2fe',
             font: { family: 'Outfit', weight: 500 }
@@ -1189,6 +1331,7 @@ function renderChartAndTable() {
           position: 'right',
           min: 0,
           max: 60,
+          display: currentViewMode !== 'history',
           grid: {
             drawOnChartArea: false,
             tickColor: '#ffb300',
@@ -1196,7 +1339,7 @@ function renderChartAndTable() {
           },
           border: {
             color: 'rgba(255, 255, 255, 0.15)',
-            display: true
+            display: currentViewMode !== 'history'
           },
           ticks: {
             color: '#ffb300',
@@ -1204,7 +1347,7 @@ function renderChartAndTable() {
             callback: value => `${value}m`
           },
           title: {
-            display: true,
+            display: currentViewMode !== 'history',
             text: 'Sunshine Duration',
             color: '#ffb300',
             font: { family: 'Outfit', weight: 500 }

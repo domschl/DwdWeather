@@ -13,6 +13,7 @@ class AppConfig(BaseModel):
     mqtt_topic: str = "omu/enviro-master/BME280-1/sensor/temperature"
     mqtt_topic_indoor: str | None = "blegate/gator/wohnzimmer/sensor/temperature"
     cache_dir: str = "cache"
+    database_path: str = "cache/dwdweather.db"
 
 def load_config() -> AppConfig:
     # 1. Start with defaults
@@ -45,6 +46,8 @@ def load_config() -> AppConfig:
                         config.mqtt_topic_indoor = data["mqtt_topic_indoor"] if data["mqtt_topic_indoor"] else None
                     if "cache_dir" in data:
                         config.cache_dir = str(data["cache_dir"])
+                    if "database_path" in data:
+                        config.database_path = str(data["database_path"])
             except Exception as e:
                 print(f"Warning: Failed to load config from {path}: {e}")
 
@@ -93,6 +96,10 @@ def load_config() -> AppConfig:
     cache_dir_env = os.environ.get("DWD_CACHE_DIR")
     if cache_dir_env:
         config.cache_dir = cache_dir_env
+
+    database_path_env = os.environ.get("DWD_DATABASE_PATH")
+    if database_path_env:
+        config.database_path = database_path_env
 
     # 4. Enforce cache_expiry hard limit: at least 1800 seconds
     if config.cache_expiry_secs < 1800:

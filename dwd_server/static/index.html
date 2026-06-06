@@ -144,6 +144,24 @@
             <button id="btn-tab-extended" class="tab-btn" onclick="switchViewMode('extended')">
               10-Day Outlook (6h resolution)
             </button>
+            <button id="btn-tab-history" class="tab-btn" onclick="switchViewMode('history')">
+              Historical Comparison
+            </button>
+          </div>
+        </div>
+
+        <!-- History Controls Bar (visible only in History mode) -->
+        <div class="history-controls-bar" id="history-controls" style="display: none;">
+          <div class="history-presets">
+            <button id="btn-preset-7d" class="preset-btn active" onclick="setHistoryRange(7)">Last 7 Days</button>
+            <button id="btn-preset-30d" class="preset-btn" onclick="setHistoryRange(30)">Last 30 Days</button>
+          </div>
+          <div class="custom-range">
+            <span class="range-label">Custom Range:</span>
+            <label for="history-start">From</label>
+            <input type="date" id="history-start" onchange="onCustomHistoryChange()">
+            <label for="history-end">To</label>
+            <input type="date" id="history-end" onchange="onCustomHistoryChange()">
           </div>
         </div>
 

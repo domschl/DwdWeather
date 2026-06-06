@@ -31,7 +31,9 @@ package() {
   "station_id": "10865",
   "cache_expiry_secs": 3600,
   "port": 8089,
-  "host": "0.0.0.0"
+  "host": "0.0.0.0",
+  "cache_dir": "/var/lib/dwdweather",
+  "database_path": "/var/lib/dwdweather/dwdweather.db"
 }
 EOF
 
