@@ -5,9 +5,13 @@ let currentViewMode = 'near'; // 'near', 'extended', or 'history'
 let weatherChart = null;
 let historyData = null;
 let currentHistoryGroup = 'temp_solar'; // 'temp_solar', 'moisture', 'radiation', 'pressure_magnetic'
+let statusData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   fetchForecast();
+  fetchStatus();
+  // Auto-refresh status every 2 minutes
+  setInterval(fetchStatus, 120_000);
 });
 
 // Fetch forecast from the REST API
@@ -466,14 +470,25 @@ function getHistoricalFilteredData() {
     }
   }
 
+  // Tracks which (hourKey, key) pairs have at least one null-sentinel row.
+  // If an hour has ONLY null sentinels and no real values, avg() returns null
+  // and the time-axis entry is still created so Chart.js shows a gap.
+  const nullSentinelHours = {}; // key -> Set<hourKey>
+
   function addToHourly(list, key, transform = (v) => v) {
     if (!list) return;
     list.forEach(item => {
-      if (item.val === null || item.val === undefined) return;
       const d = new Date(item.time);
       if (isNaN(d.getTime())) return;
       d.setMinutes(0, 0, 0);
       const hourKey = d.toISOString();
+      if (item.val === null || item.val === undefined) {
+        // Null sentinel: register the hour so it appears on the time axis
+        initHour(hourKey);
+        if (!nullSentinelHours[key]) nullSentinelHours[key] = new Set();
+        nullSentinelHours[key].add(hourKey);
+        return; // do not push into the numeric array
+      }
       initHour(hourKey);
       hourlyMap[hourKey][key].push(transform(item.val));
     });
@@ -543,6 +558,8 @@ function getHistoricalFilteredData() {
     result.labels.push(hourStr);
     const obj = hourlyMap[hourStr];
     
+    // avgOrNull returns null both when arr is empty (no data for this hour)
+    // and when the hour had only null-sentinel rows (handled by nullSentinelHours).
     const avg = (arr) => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) : null;
     
     result.temps.push(avg(obj.forecast_temp));
@@ -1261,7 +1278,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: true,
+        spanGaps: false,
         order: 0
       },
       {
@@ -1276,7 +1293,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: true,
+        spanGaps: false,
         order: 0
       },
       {
@@ -1331,7 +1348,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1345,7 +1362,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1373,7 +1390,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1398,7 +1415,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-lux',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1412,7 +1429,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 3
         },
         {
@@ -1426,7 +1443,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 4
         },
         {
@@ -1440,7 +1457,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 5
         }
       ];
@@ -1457,7 +1474,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1471,7 +1488,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1485,7 +1502,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
@@ -1513,7 +1530,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-freq',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1527,7 +1544,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
@@ -1541,7 +1558,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         }
       ];
@@ -1558,7 +1575,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-press',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1572,7 +1589,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
@@ -1586,7 +1603,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         },
         {
@@ -1600,7 +1617,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 3
         },
         {
@@ -1614,7 +1631,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 4
         },
         {
@@ -1628,7 +1645,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-kp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 5
         },
         {
@@ -1642,7 +1659,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-speed',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 6
         },
         {
@@ -1656,7 +1673,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-density',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 7
         },
         {
@@ -1670,7 +1687,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 8
         },
         {
@@ -1684,7 +1701,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 9
         },
         {
@@ -1698,7 +1715,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-speed',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 10
         },
         {
@@ -1712,7 +1729,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-dir',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 11
         }
       ];
@@ -2326,3 +2343,145 @@ toastStyle.textContent = `
   }
 `;
 document.head.appendChild(toastStyle);
+
+// =============================================================================
+// Data Sources Status Panel
+// =============================================================================
+
+function toggleDataSources() {
+  const body = document.getElementById('datasources-body');
+  const chevron = document.getElementById('ds-chevron');
+  const btn = document.getElementById('datasources-toggle');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  chevron.classList.toggle('open', !isOpen);
+  btn.setAttribute('aria-expanded', String(!isOpen));
+}
+
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    if (!res.ok) return;
+    statusData = await res.json();
+    renderStatusPanel();
+  } catch (e) {
+    console.warn('Failed to fetch /api/status:', e);
+  }
+}
+
+function formatAge(ageSecs) {
+  if (ageSecs === null || ageSecs === undefined) return 'never';
+  if (ageSecs < 60) return `${Math.round(ageSecs)}s ago`;
+  if (ageSecs < 3600) return `${Math.round(ageSecs / 60)}m ago`;
+  return `${(ageSecs / 3600).toFixed(1)}h ago`;
+}
+
+function formatLastSeen(ts) {
+  if (!ts) return 'never';
+  return new Date(ts * 1000).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, timeZone: 'Europe/Berlin'
+  });
+}
+
+function chipState(isStale, neverSeen) {
+  if (neverSeen) return 'unavailable';
+  if (isStale) return 'stale';
+  return 'healthy';
+}
+
+function makeChip(dotClass, name, detail, detailClass = '') {
+  return `
+    <div class="ds-source-chip ${dotClass}">
+      <span class="ds-dot ${dotClass}"></span>
+      <div class="ds-info">
+        <span class="ds-name" title="${name}">${name}</span>
+        <span class="ds-detail ${detailClass}" title="${detail}">${detail}</span>
+      </div>
+    </div>`;
+}
+
+function renderStatusPanel() {
+  if (!statusData) return;
+
+  const grid = document.getElementById('ds-grid');
+  if (!grid) return;
+
+  let html = '';
+  let issueCount = 0;
+
+  // --- Polled sources ---
+  const sources = statusData.sources || {};
+  for (const [key, src] of Object.entries(sources)) {
+    const neverSeen = !src.last_updated;
+    const state = chipState(src.is_stale, neverSeen);
+    if (state !== 'healthy') issueCount++;
+
+    let detail;
+    if (neverSeen) {
+      detail = 'No data yet';
+    } else {
+      const age = formatAge(src.age_secs);
+      const nextIn = src.last_updated
+        ? Math.max(0, src.interval_secs - src.age_secs)
+        : null;
+      const nextStr = nextIn !== null ? ` · next in ${Math.round(nextIn / 60)}m` : '';
+      detail = `Updated ${age}${nextStr}`;
+    }
+
+    const detailClass = state === 'unavailable' ? 'error' : state === 'stale' ? 'warn' : '';
+    html += makeChip(state, src.label, detail, detailClass);
+  }
+
+  // --- MQTT sensors ---
+  const mqttTopics = statusData.mqtt || {};
+  const threshold = statusData.mqtt_stale_threshold_secs || 900;
+  const outdoor = [];
+  const indoor = [];
+  for (const [topic, s] of Object.entries(mqttTopics)) {
+    (s.group === 'indoor' ? indoor : outdoor).push([topic, s]);
+  }
+
+  const renderMqttGroup = (label, items) => {
+    if (items.length === 0) return '';
+    let out = `<div class="ds-section-header">${label}</div>`;
+    for (const [topic, s] of items) {
+      const neverSeen = s.last_seen === null;
+      const state = chipState(s.is_stale, neverSeen);
+      if (state !== 'healthy') issueCount++;
+
+      // Shorten topic to last 2 path segments for readability
+      const parts = topic.split('/');
+      const shortName = parts.slice(-2).join('/');
+
+      let detail;
+      if (neverSeen) {
+        detail = 'No data received';
+      } else {
+        const timeStr = formatLastSeen(s.last_seen);
+        detail = `Last: ${timeStr} (${formatAge(s.age_secs)})`;
+      }
+
+      const detailClass = state === 'unavailable' ? 'error' : state === 'stale' ? 'warn' : '';
+      out += makeChip(state, shortName, detail, detailClass);
+    }
+    return out;
+  };
+
+  html += renderMqttGroup('MQTT Outdoor', outdoor);
+  html += renderMqttGroup('MQTT Indoor', indoor);
+
+  grid.innerHTML = html;
+
+  // Update collapsed summary badge
+  const summary = document.getElementById('ds-summary');
+  if (summary) {
+    if (issueCount === 0) {
+      summary.textContent = 'All OK';
+      summary.style.color = '#10b981';
+    } else {
+      summary.textContent = `${issueCount} issue${issueCount > 1 ? 's' : ''}`;
+      summary.style.color = '#f59e0b';
+    }
+  }
+}

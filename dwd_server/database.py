@@ -20,18 +20,21 @@ class Database:
         with self._get_conn() as conn:
             # Enable WAL mode for better write/read concurrency
             conn.execute("PRAGMA journal_mode=WAL;")
-            
-            # Create sensor_readings table
+
+            # Create sensor_readings table.
+            # `value` is REAL and nullable — NULL represents an explicit "data
+            # unavailable" sentinel inserted by the scheduler on fetch failure,
+            # which the frontend renders as a line-break gap (no interpolation).
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sensor_readings (
                     timestamp TEXT NOT NULL,
                     sensor_id TEXT NOT NULL,
                     metric TEXT NOT NULL,
-                    value REAL NOT NULL,
+                    value REAL,
                     PRIMARY KEY (timestamp, sensor_id, metric)
                 );
             """)
-            
+
             # Create forecast_history table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS forecast_history (
@@ -42,15 +45,41 @@ class Database:
                     PRIMARY KEY (timestamp, station_id, metric)
                 );
             """)
-            
+
+            # Migrate existing DB: drop NOT NULL constraint on sensor_readings.value
+            # SQLite does not support ALTER COLUMN, so we detect old schema via
+            # PRAGMA table_info and rebuild if necessary.
+            cursor = conn.execute("PRAGMA table_info(sensor_readings);")
+            cols = {row["name"]: row for row in cursor.fetchall()}
+            value_col = cols.get("value")
+            if value_col is not None and value_col["notnull"] == 1:
+                logger.info("Migrating sensor_readings: dropping NOT NULL on value column...")
+                conn.execute("ALTER TABLE sensor_readings RENAME TO sensor_readings_old;")
+                conn.execute("""
+                    CREATE TABLE sensor_readings (
+                        timestamp TEXT NOT NULL,
+                        sensor_id TEXT NOT NULL,
+                        metric TEXT NOT NULL,
+                        value REAL,
+                        PRIMARY KEY (timestamp, sensor_id, metric)
+                    );
+                """)
+                conn.execute("""
+                    INSERT INTO sensor_readings
+                    SELECT timestamp, sensor_id, metric, value
+                    FROM sensor_readings_old;
+                """)
+                conn.execute("DROP TABLE sensor_readings_old;")
+                logger.info("Migration complete.")
+
             # Create indices to speed up range queries
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_readings_query ON sensor_readings (sensor_id, metric, timestamp);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_forecast_history_query ON forecast_history (station_id, metric, timestamp);")
-            
+
             conn.commit()
         logger.info(f"Database initialized at {self.db_path}")
 
-    def insert_sensor_reading(self, timestamp: str, sensor_id: str, metric: str, value: float) -> None:
+    def insert_sensor_reading(self, timestamp: str, sensor_id: str, metric: str, value: float | None) -> None:
         try:
             with self._get_conn() as conn:
                 conn.execute("""
@@ -61,7 +90,7 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to insert sensor reading: {e}")
 
-    def insert_sensor_readings(self, readings: list[tuple[str, str, str, float]]) -> None:
+    def insert_sensor_readings(self, readings: list[tuple[str, str, str, float | None]]) -> None:
         if not readings:
             return
         try:
@@ -89,6 +118,7 @@ class Database:
             logger.error(f"Failed to insert forecast readings: {e}")
 
     def get_sensor_history(self, sensor_id: str, metric: str, start: str, end: str) -> list[dict[str, Any]]:
+        """Return timestamped readings including NULL sentinels (val=None) for gaps."""
         try:
             with self._get_conn() as conn:
                 cursor = conn.execute("""

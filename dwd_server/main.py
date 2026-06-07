@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 import json
 from pathlib import Path
@@ -16,6 +15,7 @@ from dwd_server.mqtt_client import MQTTManager
 from dwd_server.database import Database
 from dwd_server.noaa import fetch_and_store_space_weather
 from dwd_server.mim import fetch_and_store_mim_weather
+from dwd_server.scheduler import BackgroundScheduler, ScheduledTask
 
 # Set up logging
 logging.basicConfig(
@@ -24,7 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dwd_server.main")
 
-config:AppConfig = load_config()
+config: AppConfig = load_config()
 
 db = Database(config.database_path)
 
@@ -118,20 +118,69 @@ def write_cache_to_disk(forecast: WeatherForecast) -> None:
     except Exception as e:
         logger.error(f"Failed to write cache to disk: {e}")
 
+# ---------------------------------------------------------------------------
+# Poll intervals
+# ---------------------------------------------------------------------------
+FORECAST_MIN_INTERVAL_SECS = 3600   # 60 min
+NOAA_INTERVAL_SECS = 1800           # 30 min
+MIM_INTERVAL_SECS = 1800            # 30 min
+MQTT_HEALTH_INTERVAL_SECS = 600     # 10 min
+
+# Wall-clock timestamps of last successful update (for /api/status)
+_last_noaa_update: float = 0.0
+_last_mim_update: float = 0.0
+
+def _poll_forecast() -> None:
+    """Background task: fetch DWD forecast and update cache. Never raises."""
+    cache = load_cache_from_disk()
+    now = time.time()
+
+    if cache is not None:
+        elapsed = now - cache.last_updated
+        if elapsed < FORECAST_MIN_INTERVAL_SECS:
+            logger.info(
+                f"[scheduler] Forecast rate-limited — last update was {elapsed:.0f}s ago. Skipping."
+            )
+            return
+
+    station_id = config.station_id
+    logger.info(f"[scheduler] Fetching DWD forecast for station {station_id}...")
+    new_forecast = fetch_and_parse(station_id)
+    if new_forecast is not None:
+        write_cache_to_disk(new_forecast)
+        logger.info(f"[scheduler] DWD forecast updated for station {station_id}.")
+    else:
+        logger.warning(f"[scheduler] DWD forecast fetch failed; cache unchanged.")
+
+def _poll_noaa() -> None:
+    global _last_noaa_update
+    fetch_and_store_space_weather(db)
+    _last_noaa_update = time.time()
+
+def _poll_mim() -> None:
+    global _last_mim_update
+    fetch_and_store_mim_weather(db)
+    _last_mim_update = time.time()
+
+def _poll_mqtt_health() -> None:
+    """Check each MQTT topic for staleness; inject null sentinels for silent topics."""
+    if mqtt_manager:
+        mqtt_manager.inject_stale_sentinels()
+    if mqtt_manager_indoor:
+        mqtt_manager_indoor.inject_stale_sentinels()
+
 def update_forecast_on_demand() -> WeatherForecast:
-    """Attempts to fetch from DWD. If successful, caches and returns it. If fails, returns expired cache or raises error."""
+    """On-demand fetch (from HTTP endpoints). Raises HTTPException on total failure."""
     cache = load_cache_from_disk()
     station_id = config.station_id
 
-    # Attempt fetch
     logger.info(f"On-demand refresh triggered for station {station_id}")
     new_forecast = fetch_and_parse(station_id)
 
     if new_forecast is not None:
         write_cache_to_disk(new_forecast)
         return new_forecast
-    
-    # Fallback to cache if DWD request failed
+
     if cache is not None:
         logger.warning(f"DWD fetch failed; falling back to stale cache from {time.ctime(cache.last_updated)}")
         return cache.forecast
@@ -145,16 +194,12 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
     cache = load_cache_from_disk()
     now = time.time()
 
-    # Enforce minimum hard limit of 1800s between fetches
-    min_rate_limit = 1800
     is_rate_limited = False
-
     if cache is not None:
         elapsed = now - cache.last_updated
-        if elapsed < min_rate_limit:
+        if elapsed < FORECAST_MIN_INTERVAL_SECS:
             is_rate_limited = True
 
-    # Check if we should update
     should_update = force_refresh
     if not should_update:
         if cache is None:
@@ -166,14 +211,13 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
 
     if should_update:
         if is_rate_limited:
-            logger.info("DWD update requested but rate-limited (last update was less than 1800 seconds ago). Serving from cache.")
+            logger.info("DWD update requested but rate-limited. Serving from cache.")
             result_forecast = cache.forecast  # type: ignore
             source = "cache (rate-limited)"
             last_updated = cache.last_updated  # type: ignore
         else:
             result_forecast = update_forecast_on_demand()
             source = "network"
-            # Refresh memory cache, load again to get the exact last_updated time
             refreshed_cache = load_cache_from_disk()
             last_updated = refreshed_cache.last_updated if refreshed_cache else now
     else:
@@ -186,7 +230,7 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
     return {
         "source": source,
         "last_updated": last_updated,
-        "next_allowed_update": last_updated + min_rate_limit,
+        "next_allowed_update": last_updated + FORECAST_MIN_INTERVAL_SECS,
         "cache_expiry_secs": config.cache_expiry_secs,
         "forecast": result_forecast,
         "mqtt_last_measurement": mqtt_data.get("last_measurement"),
@@ -194,6 +238,13 @@ def get_forecast_data(force_refresh: bool = False) -> dict[str, Any]:
         "mqtt_indoor_last_measurement": mqtt_indoor_data.get("last_measurement"),
         "mqtt_indoor_history": mqtt_indoor_data.get("history")
     }
+
+
+# ---------------------------------------------------------------------------
+# Background scheduler (module-level so /api/status can access it)
+# ---------------------------------------------------------------------------
+_scheduler: BackgroundScheduler | None = None
+
 
 @app.get("/api/forecast")
 def get_forecast() -> dict[str, Any]:
@@ -205,34 +256,30 @@ def refresh_forecast() -> dict[str, Any]:
 
 @app.get("/api/history")
 def get_history(start: str, end: str) -> dict[str, Any]:
-    # Poll space weather and MIM data on history request to keep them up to date
-    fetch_and_store_space_weather(db)
-    fetch_and_store_mim_weather(db)
-
-    outdoor_history = []
+    # Data is kept fresh by the BackgroundScheduler — pure DB read here.
+    outdoor_history: list[dict[str, Any]] = []
     if config.mqtt_topic:
         outdoor_history = db.get_sensor_history(config.mqtt_topic, "temperature", start, end)
-        
-    indoor_history = []
+
+    indoor_history: list[dict[str, Any]] = []
     if config.mqtt_topic_indoor:
         indoor_history = db.get_sensor_history(config.mqtt_topic_indoor, "temperature", start, end)
-        
+
     forecast_history = db.get_forecast_history(config.station_id, "TTT", start, end)
     forecast_wwp = db.get_forecast_history(config.station_id, "wwP", start, end)
     forecast_sund = db.get_forecast_history(config.station_id, "SunD1", start, end)
-    
-    # Query history for all additional sensors
-    additional_history = {}
+
+    additional_history: dict[str, list[dict[str, Any]]] = {}
     for topic in config.mqtt_additional_topics:
         metric = topic.split('/')[-1]
         additional_history[topic] = db.get_sensor_history(topic, metric, start, end)
-        
+
     kp_history = db.get_sensor_history("noaa", "kp", start, end)
     wind_speed = db.get_sensor_history("noaa", "wind_speed", start, end)
     wind_density = db.get_sensor_history("noaa", "wind_density", start, end)
     imf_bt = db.get_sensor_history("noaa", "imf_bt", start, end)
     imf_bz = db.get_sensor_history("noaa", "imf_bz", start, end)
-    
+
     mim_temp = db.get_sensor_history("mim", "temp", start, end)
     mim_humidity = db.get_sensor_history("mim", "humidity", start, end)
     mim_wind_speed = db.get_sensor_history("mim", "wind_speed", start, end)
@@ -240,7 +287,7 @@ def get_history(start: str, end: str) -> dict[str, Any]:
     mim_global_rad = db.get_sensor_history("mim", "global_rad", start, end)
     mim_diffuse_rad = db.get_sensor_history("mim", "diffuse_rad", start, end)
     mim_atm_rad = db.get_sensor_history("mim", "atm_rad", start, end)
-    
+
     return {
         "outdoor": outdoor_history,
         "indoor": indoor_history,
@@ -262,15 +309,113 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         "mim_atm_rad": mim_atm_rad
     }
 
+@app.get("/api/status")
+def get_status() -> dict[str, Any]:
+    """Return health status of every data source for the dashboard status panel."""
+    now_wall = time.time()
+    now_mono = time.monotonic()
+
+    # --- DWD Forecast ---
+    cache = load_cache_from_disk()
+    if cache is not None:
+        forecast_age = now_wall - cache.last_updated
+        forecast_last = cache.last_updated
+    else:
+        forecast_age = None
+        forecast_last = None
+
+    # --- Scheduler task last-run times (convert monotonic → approximate wall clock) ---
+    scheduler_status: dict[str, dict[str, float]] = {}
+    if _scheduler is not None:
+        for name, info in _scheduler.get_status().items():
+            last_mono = info["last_run"]
+            if last_mono > 0:
+                # Approximate wall-clock: now_wall - (now_mono - last_mono)
+                wall_approx = now_wall - (now_mono - last_mono)
+                age = now_wall - wall_approx
+            else:
+                wall_approx = 0.0
+                age = None  # type: ignore
+            scheduler_status[name] = {
+                "last_run_wall": wall_approx,
+                "age_secs": age,
+                "interval_secs": info["interval_secs"],
+            }
+
+    # --- MQTT sensors ---
+    mqtt_statuses: dict[str, Any] = {}
+    if mqtt_manager:
+        for topic, s in mqtt_manager.get_topic_statuses().items():
+            mqtt_statuses[topic] = {
+                "last_seen": s["last_seen"],
+                "age_secs": s["age_secs"],
+                "is_stale": s["is_stale"],
+                "stale_threshold_secs": mqtt_manager.stale_threshold_secs,
+                "group": "outdoor",
+            }
+    if mqtt_manager_indoor:
+        for topic, s in mqtt_manager_indoor.get_topic_statuses().items():
+            mqtt_statuses[topic] = {
+                "last_seen": s["last_seen"],
+                "age_secs": s["age_secs"],
+                "is_stale": s["is_stale"],
+                "stale_threshold_secs": mqtt_manager_indoor.stale_threshold_secs,
+                "group": "indoor",
+            }
+
+    # --- NOAA & MIM use scheduler task timing ---
+    noaa_info = scheduler_status.get("noaa", {})
+    mim_info = scheduler_status.get("mim", {})
+
+    return {
+        "sources": {
+            "forecast": {
+                "label": "DWD Forecast",
+                "last_updated": forecast_last,
+                "age_secs": forecast_age,
+                "interval_secs": FORECAST_MIN_INTERVAL_SECS,
+                "is_stale": forecast_age is None or forecast_age > FORECAST_MIN_INTERVAL_SECS * 2,
+            },
+            "noaa": {
+                "label": "NOAA Space Weather",
+                "last_updated": noaa_info.get("last_run_wall") or None,
+                "age_secs": noaa_info.get("age_secs"),
+                "interval_secs": NOAA_INTERVAL_SECS,
+                "is_stale": (
+                    noaa_info.get("age_secs") is None
+                    or noaa_info.get("age_secs", 0) > NOAA_INTERVAL_SECS * 3
+                ),
+            },
+            "mim": {
+                "label": "MIM Munich Weather",
+                "last_updated": mim_info.get("last_run_wall") or None,
+                "age_secs": mim_info.get("age_secs"),
+                "interval_secs": MIM_INTERVAL_SECS,
+                "is_stale": (
+                    mim_info.get("age_secs") is None
+                    or mim_info.get("age_secs", 0) > MIM_INTERVAL_SECS * 3
+                ),
+            },
+        },
+        "mqtt": mqtt_statuses,
+        "mqtt_stale_threshold_secs": (
+            mqtt_manager.stale_threshold_secs if mqtt_manager else 900
+        ),
+    }
+
 @app.get("/api/config")
 def get_current_config() -> dict[str, Any]:
     return {
         "station_id": config.station_id,
         "cache_expiry_secs": config.cache_expiry_secs,
-        "min_cache_expiry_limit": 1800,
+        "forecast_min_interval_secs": FORECAST_MIN_INTERVAL_SECS,
+        "noaa_interval_secs": NOAA_INTERVAL_SECS,
+        "mim_interval_secs": MIM_INTERVAL_SECS,
+        "mqtt_health_interval_secs": MQTT_HEALTH_INTERVAL_SECS,
         "port": config.port,
         "host": config.host
     }
+
 
 # Ensure static files directory exists before mounting
 static_dir = Path(__file__).parent / "static"
@@ -279,22 +424,64 @@ if not static_dir.exists():
 
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
+
 def run() -> None:
-    # Ensure cache directory is ready on startup
+    global _scheduler
     ensure_cache_dir()
-    
+
     # Seed database from existing cache if available
     cache = load_cache_from_disk()
     if cache:
         db.insert_forecast_readings(cache.forecast.station_id, cache.forecast.timesteps, cache.forecast.elements)
-    
+
     if mqtt_manager:
         mqtt_manager.start()
     if mqtt_manager_indoor:
         mqtt_manager_indoor.start()
 
-    logger.info(f"Starting server with station_id={config.station_id}, cache_expiry_secs={config.cache_expiry_secs}s")
+    # -------------------------------------------------------------------
+    # Background scheduler — independent poll intervals per source:
+    #   forecast:     60 min  (DWD MOSMIX_L updated ~4×/day)
+    #   noaa:         30 min  (space weather)
+    #   mim:          30 min  (Munich local weather scrape)
+    #   mqtt_health:  10 min  (detect stale MQTT topics, insert null sentinels)
+    # MQTT sensors themselves are event-driven (push); no polling needed.
+    # -------------------------------------------------------------------
+    _scheduler = BackgroundScheduler(
+        tasks=[
+            ScheduledTask(
+                name="forecast",
+                fn=_poll_forecast,
+                interval_secs=FORECAST_MIN_INTERVAL_SECS,
+            ),
+            ScheduledTask(
+                name="noaa",
+                fn=_poll_noaa,
+                interval_secs=NOAA_INTERVAL_SECS,
+            ),
+            ScheduledTask(
+                name="mim",
+                fn=_poll_mim,
+                interval_secs=MIM_INTERVAL_SECS,
+            ),
+            ScheduledTask(
+                name="mqtt_health",
+                fn=_poll_mqtt_health,
+                interval_secs=MQTT_HEALTH_INTERVAL_SECS,
+            ),
+        ],
+        tick_secs=30,
+    )
+    _scheduler.start()
+
+    logger.info(
+        f"Starting server with station_id={config.station_id}, "
+        f"forecast={FORECAST_MIN_INTERVAL_SECS}s, "
+        f"noaa={NOAA_INTERVAL_SECS}s, mim={MIM_INTERVAL_SECS}s, "
+        f"mqtt_health={MQTT_HEALTH_INTERVAL_SECS}s"
+    )
     uvicorn.run("dwd_server.main:app", host=config.host, port=config.port, reload=False)
+
 
 if __name__ == "__main__":
     run()

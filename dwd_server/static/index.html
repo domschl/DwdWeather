@@ -133,7 +133,24 @@
 
       </section>
 
-      <!-- Chart and Visualizations -->
+      <!-- Data Sources Status Panel -->
+      <section class="glass-card datasources-panel" id="datasources-panel">
+        <button class="datasources-toggle" id="datasources-toggle" onclick="toggleDataSources()" aria-expanded="false">
+          <span class="datasources-title">
+            <span class="ds-icon">📡</span>
+            <span>Data Sources</span>
+            <span class="ds-summary" id="ds-summary">Loading...</span>
+          </span>
+          <span class="ds-chevron" id="ds-chevron">▼</span>
+        </button>
+        <div class="datasources-body" id="datasources-body" style="display: none;">
+          <div class="ds-grid" id="ds-grid">
+            <!-- Populated by JavaScript -->
+          </div>
+        </div>
+      </section>
+
+
       <section class="chart-section glass-card" id="card-chart-container">
         <div class="chart-header">
           <h2>Forecast Timeline</h2>
