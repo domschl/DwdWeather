@@ -1061,10 +1061,13 @@ function renderChartAndTable() {
       }
     },
     afterDraw: (chart) => {
-      if (currentViewMode === 'history') return;
-      if (!data || !data.labels || data.labels.length === 0) return;
+      if (!data || !data.labels || data.labels.length < 2) return;
       
       const now = new Date();
+      const firstLabel = new Date(data.labels[0]);
+      const lastLabel = new Date(data.labels[data.labels.length - 1]);
+      if (now < firstLabel || now > lastLabel) return;
+      
       let closestIdx = -1;
       let minDiff = Infinity;
       
@@ -1084,21 +1087,23 @@ function renderChartAndTable() {
           const bottomY = chart.chartArea.bottom;
           
           // Find adjacent forecast points in raw forecast data to interpolate forecast temperature
-          const fcTimes = weatherData.forecast.timesteps;
-          const fcTtt = weatherData.forecast.elements.TTT || [];
+          const fcTimes = weatherData && weatherData.forecast ? weatherData.forecast.timesteps : null;
+          const fcTtt = weatherData && weatherData.forecast && weatherData.forecast.elements ? (weatherData.forecast.elements.TTT || []) : [];
           let interpolatedTemp = null;
           let fcIdx1 = -1;
           let fcIdx2 = -1;
-          for (let i = 0; i < fcTimes.length - 1; i++) {
-            const d1 = new Date(fcTimes[i]);
-            const d2 = new Date(fcTimes[i+1]);
-            if (now >= d1 && now <= d2) {
-              fcIdx1 = i;
-              fcIdx2 = i + 1;
-              break;
+          if (fcTimes) {
+            for (let i = 0; i < fcTimes.length - 1; i++) {
+              const d1 = new Date(fcTimes[i]);
+              const d2 = new Date(fcTimes[i+1]);
+              if (now >= d1 && now <= d2) {
+                fcIdx1 = i;
+                fcIdx2 = i + 1;
+                break;
+              }
             }
           }
-          if (fcIdx1 !== -1 && fcIdx2 !== -1) {
+          if (fcTimes && fcIdx1 !== -1 && fcIdx2 !== -1) {
             const d1 = new Date(fcTimes[fcIdx1]);
             const d2 = new Date(fcTimes[fcIdx2]);
             const t1 = fcTtt[fcIdx1] !== null ? fcTtt[fcIdx1] - 273.15 : null;
@@ -1164,8 +1169,8 @@ function renderChartAndTable() {
               ctx.stroke();
             }
 
-            const lastMqtt = weatherData.mqtt_last_measurement;
-            const lastMqttIndoor = weatherData.mqtt_indoor_last_measurement;
+            const lastMqtt = weatherData ? weatherData.mqtt_last_measurement : null;
+            const lastMqttIndoor = weatherData ? weatherData.mqtt_indoor_last_measurement : null;
 
             // Draw glowing dot for the latest sensor temperature on the vertical line
             if (lastMqtt && lastMqtt.temp !== null && yTempScale) {
