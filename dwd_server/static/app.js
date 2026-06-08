@@ -2422,9 +2422,9 @@ function renderStatusPanel() {
       detail = 'No data yet';
     } else {
       const age = formatAge(src.age_secs);
-      const nextIn = src.last_updated
-        ? Math.max(0, src.interval_secs - src.age_secs)
-        : null;
+      const nextIn = src.next_poll_in !== undefined && src.next_poll_in !== null
+        ? src.next_poll_in
+        : (src.last_updated ? Math.max(0, src.interval_secs - src.age_secs) : null);
       const nextStr = nextIn !== null ? ` · next in ${Math.round(nextIn / 60)}m` : '';
       detail = `Updated ${age}${nextStr}`;
     }

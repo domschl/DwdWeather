@@ -369,6 +369,11 @@ def get_status() -> dict[str, Any]:
     noaa_age = now_wall - _last_noaa_update if _last_noaa_update > 0.0 else None
     mim_age = now_wall - _last_mim_update if _last_mim_update > 0.0 else None
 
+    # Calculate time remaining until next scheduled attempt (based on last attempt age)
+    forecast_next = max(0.0, FORECAST_MIN_INTERVAL_SECS - forecast_age) if forecast_age is not None else None
+    noaa_next = max(0.0, NOAA_INTERVAL_SECS - noaa_info.get("age_secs")) if noaa_info.get("age_secs") is not None else None
+    mim_next = max(0.0, MIM_INTERVAL_SECS - mim_info.get("age_secs")) if mim_info.get("age_secs") is not None else None
+
     return {
         "sources": {
             "forecast": {
@@ -377,6 +382,7 @@ def get_status() -> dict[str, Any]:
                 "age_secs": forecast_age,
                 "interval_secs": FORECAST_MIN_INTERVAL_SECS,
                 "is_stale": forecast_age is None or forecast_age > FORECAST_MIN_INTERVAL_SECS * 2,
+                "next_poll_in": forecast_next,
             },
             "noaa": {
                 "label": "NOAA Space Weather",
@@ -388,6 +394,7 @@ def get_status() -> dict[str, Any]:
                     or noaa_age is None
                     or noaa_age > NOAA_INTERVAL_SECS * 3
                 ),
+                "next_poll_in": noaa_next,
             },
             "mim": {
                 "label": "MIM Munich Weather",
@@ -399,6 +406,7 @@ def get_status() -> dict[str, Any]:
                     or mim_age is None
                     or mim_age > MIM_INTERVAL_SECS * 3
                 ),
+                "next_poll_in": mim_next,
             },
         },
         "mqtt": mqtt_statuses,
