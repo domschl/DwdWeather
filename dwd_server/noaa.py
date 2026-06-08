@@ -16,12 +16,13 @@ def _current_poll_slot() -> str:
     return slot.strftime("%Y-%m-%dT%H:%M:00.000Z")
 
 
-def fetch_and_store_space_weather(database: Database) -> None:
+def fetch_and_store_space_weather(database: Database) -> bool:
     """Fetch NOAA space weather data and store it in the database.
 
     On failure of any individual sub-fetch, inserts a NULL sentinel row for
     that metric so the time-series has an explicit gap marker instead of a
     silent hole.
+    Returns True on success, False on failure.
     """
     raw_groups: dict[tuple[str, str, str], list[float]] = {}
     failed_metrics: set[tuple[str, str]] = set()
@@ -119,3 +120,5 @@ def fetch_and_store_space_weather(database: Database) -> None:
                     f"({len(failed_metrics)} null sentinel(s))...")
         database.insert_sensor_readings(readings)
         logger.info("Bulk insert finished successfully.")
+
+    return len(raw_groups) > 0

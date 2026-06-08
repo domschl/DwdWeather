@@ -154,13 +154,15 @@ def _poll_forecast() -> None:
 
 def _poll_noaa() -> None:
     global _last_noaa_update
-    fetch_and_store_space_weather(db)
-    _last_noaa_update = time.time()
+    success = fetch_and_store_space_weather(db)
+    if success:
+        _last_noaa_update = time.time()
 
 def _poll_mim() -> None:
     global _last_mim_update
-    fetch_and_store_mim_weather(db)
-    _last_mim_update = time.time()
+    success = fetch_and_store_mim_weather(db)
+    if success:
+        _last_mim_update = time.time()
 
 def _poll_mqtt_health() -> None:
     """Check each MQTT topic for staleness; inject null sentinels for silent topics."""
@@ -363,9 +365,9 @@ def get_status() -> dict[str, Any]:
                 "group": "indoor",
             }
 
-    # --- NOAA & MIM use scheduler task timing ---
-    noaa_info = scheduler_status.get("noaa", {})
-    mim_info = scheduler_status.get("mim", {})
+    # --- NOAA & MIM use last successful updates ---
+    noaa_age = now_wall - _last_noaa_update if _last_noaa_update > 0.0 else None
+    mim_age = now_wall - _last_mim_update if _last_mim_update > 0.0 else None
 
     return {
         "sources": {
@@ -378,22 +380,24 @@ def get_status() -> dict[str, Any]:
             },
             "noaa": {
                 "label": "NOAA Space Weather",
-                "last_updated": noaa_info.get("last_run_wall") or None,
-                "age_secs": noaa_info.get("age_secs"),
+                "last_updated": _last_noaa_update if _last_noaa_update > 0.0 else None,
+                "age_secs": noaa_age,
                 "interval_secs": NOAA_INTERVAL_SECS,
                 "is_stale": (
-                    noaa_info.get("age_secs") is None
-                    or noaa_info.get("age_secs", 0) > NOAA_INTERVAL_SECS * 3
+                    _last_noaa_update == 0.0
+                    or noaa_age is None
+                    or noaa_age > NOAA_INTERVAL_SECS * 3
                 ),
             },
             "mim": {
                 "label": "MIM Munich Weather",
-                "last_updated": mim_info.get("last_run_wall") or None,
-                "age_secs": mim_info.get("age_secs"),
+                "last_updated": _last_mim_update if _last_mim_update > 0.0 else None,
+                "age_secs": mim_age,
                 "interval_secs": MIM_INTERVAL_SECS,
                 "is_stale": (
-                    mim_info.get("age_secs") is None
-                    or mim_info.get("age_secs", 0) > MIM_INTERVAL_SECS * 3
+                    _last_mim_update == 0.0
+                    or mim_age is None
+                    or mim_age > MIM_INTERVAL_SECS * 3
                 ),
             },
         },
@@ -426,8 +430,12 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
 def run() -> None:
-    global _scheduler
+    global _scheduler, _last_noaa_update, _last_mim_update
     ensure_cache_dir()
+
+    # Query the last successful update timestamps from the database if they exist
+    _last_noaa_update = db.get_last_successful_reading_time("noaa") or 0.0
+    _last_mim_update = db.get_last_successful_reading_time("mim") or 0.0
 
     # Seed database from existing cache if available
     cache = load_cache_from_disk()

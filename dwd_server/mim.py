@@ -19,11 +19,12 @@ def _current_poll_slot() -> str:
     return slot.strftime("%Y-%m-%dT%H:%M:00.000Z")
 
 
-def fetch_and_store_mim_weather(database: Database) -> None:
+def fetch_and_store_mim_weather(database: Database) -> bool:
     """Fetch MIM Munich weather data and store it in the database.
 
     On failure, inserts NULL sentinel rows for all MIM metrics at the current
     poll slot so the time-series has an explicit gap marker.
+    Returns True on success, False on failure.
     """
     url = "https://www.meteo.physik.uni-muenchen.de/~quicklooks/aktuelle_messwerte/messwerte_stadt.html"
     try:
@@ -37,14 +38,22 @@ def fetch_and_store_mim_weather(database: Database) -> None:
 
         # Parse timestamp
         # Example: Stand: 06.06.2026 17:10 Uhr
-        ts_match = re.search(r"Stand:\s*(\d{2})\.(\d{2})\.(\d{4})\s*(\d{2}):(\d{2})\s*Uhr", html)
+        # Make regex more robust by allowing optional comma/spaces between date and time
+        ts_match = re.search(r"Stand:\s*(\d{2})\.(\d{2})\.(\d{4})[,\s]*(\d{2}):(\d{2})\s*Uhr", html)
         if not ts_match:
             logger.warning("Failed to find timestamp in MIM HTML — inserting null sentinels.")
             _insert_null_sentinels(database)
-            return
+            return False
 
         day, month, year, hour, minute = map(int, ts_match.groups())
-        dt = datetime(year, month, day, hour, minute, tzinfo=ZoneInfo("Europe/Berlin"))
+        
+        # Support 24:00 as 00:00 of the next day
+        if hour == 24:
+            from datetime import timedelta
+            dt = datetime(year, month, day, 0, minute, tzinfo=ZoneInfo("Europe/Berlin")) + timedelta(days=1)
+        else:
+            dt = datetime(year, month, day, hour, minute, tzinfo=ZoneInfo("Europe/Berlin"))
+            
         utc_dt = dt.astimezone(ZoneInfo("UTC"))
         timestamp = utc_dt.strftime("%Y-%m-%dT%H:%M:00.000Z")
 
@@ -89,9 +98,11 @@ def fetch_and_store_mim_weather(database: Database) -> None:
         database.insert_sensor_readings(readings)
         non_null = sum(1 for r in readings if r[3] is not None)
         logger.info(f"Stored {non_null} MIM readings ({len(readings) - non_null} null) in DB.")
+        return non_null > 0
     except Exception as e:
         logger.warning(f"Failed to fetch or parse MIM Munich weather: {e} — inserting null sentinels.")
         _insert_null_sentinels(database)
+        return False
 
 
 def _insert_null_sentinels(database: Database) -> None:

@@ -145,3 +145,24 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get forecast history: {e}")
             return []
+
+    def get_last_successful_reading_time(self, sensor_id: str) -> float | None:
+        """Return the epoch timestamp of the latest non-null reading for the sensor."""
+        try:
+            with self._get_conn() as conn:
+                cursor = conn.execute("""
+                    SELECT timestamp
+                    FROM sensor_readings
+                    WHERE sensor_id = ? AND value IS NOT NULL
+                    ORDER BY timestamp DESC
+                    LIMIT 1;
+                """, (sensor_id,))
+                row = cursor.fetchone()
+                if row:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                    return dt.timestamp()
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get last successful reading time for {sensor_id}: {e}")
+            return None
