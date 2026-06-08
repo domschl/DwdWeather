@@ -366,6 +366,8 @@ def get_status() -> dict[str, Any]:
             }
 
     # --- NOAA & MIM use last successful updates ---
+    noaa_info = scheduler_status.get("noaa", {})
+    mim_info = scheduler_status.get("mim", {})
     noaa_age = now_wall - _last_noaa_update if _last_noaa_update > 0.0 else None
     mim_age = now_wall - _last_mim_update if _last_mim_update > 0.0 else None
 
