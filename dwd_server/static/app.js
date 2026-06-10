@@ -1,10 +1,10 @@
 // DWD Weather Hub Modern Frontend Controller
 
 let weatherData = null;
-let currentViewMode = 'near'; // 'near', 'extended', or 'history'
+let currentViewMode = 'history'; // 'near', 'extended', or 'history'
 let weatherChart = null;
 let historyData = null;
-let currentHistoryGroup = 'temp_solar'; // 'temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'
+let currentHistoryGroup = 'space_weather'; // 'temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'
 let statusData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -25,6 +25,7 @@ async function fetchForecast() {
     const data = await response.json();
     weatherData = data;
     updateDashboard();
+    switchViewMode(currentViewMode);
   } catch (error) {
     console.error('Error fetching forecast:', error);
     alert(`Failed to load forecast data: ${error.message}`);
@@ -1297,7 +1298,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: false,
+        spanGaps: true,
         order: 0
       },
       {
@@ -1312,7 +1313,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: false,
+        spanGaps: true,
         order: 0
       },
       {
@@ -1367,7 +1368,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1381,7 +1382,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1409,7 +1410,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1434,7 +1435,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-lux',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1448,7 +1449,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 3
         },
         {
@@ -1462,7 +1463,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 4
         },
         {
@@ -1476,7 +1477,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 5
         }
       ];
@@ -1493,7 +1494,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1507,7 +1508,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1521,7 +1522,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 1
         },
         {
@@ -1549,7 +1550,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-freq',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1563,7 +1564,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 1
         },
         {
@@ -1577,7 +1578,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 2
         }
       ];
@@ -1594,7 +1595,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-press',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1608,7 +1609,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-speed',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 1
         },
         {
@@ -1622,7 +1623,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-dir',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 2
         }
       ];
@@ -1639,7 +1640,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-total',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1653,7 +1654,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-x',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 1
         },
         {
@@ -1667,7 +1668,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-y',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 2
         },
         {
@@ -1681,7 +1682,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-z',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 3
         }
       ];
@@ -1698,7 +1699,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-kp',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 0
         },
         {
@@ -1712,7 +1713,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-speed',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 1
         },
         {
@@ -1726,7 +1727,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-density',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 2
         },
         {
@@ -1740,7 +1741,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 3
         },
         {
@@ -1754,7 +1755,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: false,
+          spanGaps: true,
           order: 4
         }
       ];
