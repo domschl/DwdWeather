@@ -4,7 +4,7 @@ let weatherData = null;
 let currentViewMode = 'near'; // 'near', 'extended', or 'history'
 let weatherChart = null;
 let historyData = null;
-let currentHistoryGroup = 'temp_solar'; // 'temp_solar', 'moisture', 'radiation', 'pressure_magnetic'
+let currentHistoryGroup = 'temp_solar'; // 'temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'
 let statusData = null;
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -421,7 +421,7 @@ function getMetricKeyFromTopic(topic) {
 
 function switchHistoryGroup(group) {
   currentHistoryGroup = group;
-  const groups = ['temp_solar', 'moisture', 'radiation', 'pressure_magnetic'];
+  const groups = ['temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'];
   groups.forEach(g => {
     const btn = document.getElementById(`btn-group-${g}`);
     if (btn) {
@@ -860,36 +860,50 @@ function renderChartAndTable() {
         { name: 'gamma_10m', format: v => v !== null ? `${v.toFixed(3)} μSv/h` : '-' },
         { name: 'gamma_1m', format: v => v !== null ? `${v.toFixed(3)} μSv/h` : '-' }
       ];
-    } else if (currentHistoryGroup === 'pressure_magnetic') {
+    } else if (currentHistoryGroup === 'pressure') {
       theadTr.innerHTML = `
         <th>Time (Local)</th>
         <th>Air Pressure (hPa)</th>
-        <th>Magnetic Total (nT)</th>
-        <th>Magnetic X (nT)</th>
-        <th>Magnetic Y (nT)</th>
-        <th>Magnetic Z (nT)</th>
-        <th>NOAA Kp Index</th>
-        <th>Wind Speed (km/s)</th>
-        <th>Wind Density (p/cm³)</th>
-        <th>IMF Bt (nT)</th>
-        <th>IMF Bz (nT)</th>
         <th>MIM Wind Speed (m/s)</th>
         <th>MIM Wind Dir (°)</th>
       `;
       columns = [
         { name: 'time', format: formatLocalTime },
         { name: 'pressure', format: v => v !== null ? `${v.toFixed(1)} hPa` : '-' },
+        { name: 'mim_wind_speed', format: v => v !== null ? `${v.toFixed(1)} m/s` : '-' },
+        { name: 'mim_wind_dir', format: v => v !== null ? `${Math.round(v)}°` : '-' }
+      ];
+    } else if (currentHistoryGroup === 'magnetic') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>Magnetic Total (nT)</th>
+        <th>Magnetic X (nT)</th>
+        <th>Magnetic Y (nT)</th>
+        <th>Magnetic Z (nT)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
         { name: 'magnetic', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
         { name: 'magnetic_x', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
         { name: 'magnetic_y', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
-        { name: 'magnetic_z', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
+        { name: 'magnetic_z', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
+      ];
+    } else if (currentHistoryGroup === 'space_weather') {
+      theadTr.innerHTML = `
+        <th>Time (Local)</th>
+        <th>NOAA Kp Index</th>
+        <th>Wind Speed (km/s)</th>
+        <th>Wind Density (p/cm³)</th>
+        <th>IMF Bt (nT)</th>
+        <th>IMF Bz (nT)</th>
+      `;
+      columns = [
+        { name: 'time', format: formatLocalTime },
         { name: 'kp', format: v => v !== null ? `${v.toFixed(2)}` : '-' },
         { name: 'wind_speed', format: v => v !== null ? `${v.toFixed(1)} km/s` : '-' },
         { name: 'wind_density', format: v => v !== null ? `${v.toFixed(1)} p/cm³` : '-' },
         { name: 'imf_bt', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
-        { name: 'imf_bz', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' },
-        { name: 'mim_wind_speed', format: v => v !== null ? `${v.toFixed(1)} m/s` : '-' },
-        { name: 'mim_wind_dir', format: v => v !== null ? `${Math.round(v)}°` : '-' }
+        { name: 'imf_bz', format: v => v !== null ? `${v.toFixed(1)} nT` : '-' }
       ];
     }
   }
@@ -1567,7 +1581,7 @@ function renderChartAndTable() {
           order: 2
         }
       ];
-    } else if (currentHistoryGroup === 'pressure_magnetic') {
+    } else if (currentHistoryGroup === 'pressure') {
       chartDatasets = [
         {
           type: 'line',
@@ -1585,132 +1599,6 @@ function renderChartAndTable() {
         },
         {
           type: 'line',
-          label: 'Magnetic Total (nT)',
-          data: data.magnetic,
-          borderColor: '#ff5e3a',
-          borderWidth: 3,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-mag',
-          tension: 0.3,
-          spanGaps: false,
-          order: 1
-        },
-        {
-          type: 'line',
-          label: 'Magnetic X (nT)',
-          data: data.magnetic_x,
-          borderColor: '#ffb300',
-          borderWidth: 1.5,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-mag',
-          tension: 0.3,
-          spanGaps: false,
-          order: 2
-        },
-        {
-          type: 'line',
-          label: 'Magnetic Y (nT)',
-          data: data.magnetic_y,
-          borderColor: '#00ff66',
-          borderWidth: 1.5,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-mag',
-          tension: 0.3,
-          spanGaps: false,
-          order: 3
-        },
-        {
-          type: 'line',
-          label: 'Magnetic Z (nT)',
-          data: data.magnetic_z,
-          borderColor: '#ff00f0',
-          borderWidth: 1.5,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-mag',
-          tension: 0.3,
-          spanGaps: false,
-          order: 4
-        },
-        {
-          type: 'line',
-          label: 'NOAA Kp Index',
-          data: data.kp,
-          borderColor: '#a855f7',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-kp',
-          tension: 0.3,
-          spanGaps: false,
-          order: 5
-        },
-        {
-          type: 'line',
-          label: 'Wind Speed (km/s)',
-          data: data.wind_speed,
-          borderColor: '#f59e0b',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-speed',
-          tension: 0.3,
-          spanGaps: false,
-          order: 6
-        },
-        {
-          type: 'line',
-          label: 'Wind Density (p/cm³)',
-          data: data.wind_density,
-          borderColor: '#10b981',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-density',
-          tension: 0.3,
-          spanGaps: false,
-          order: 7
-        },
-        {
-          type: 'line',
-          label: 'IMF Bt (nT)',
-          data: data.imf_bt,
-          borderColor: '#e11d48',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-imf',
-          tension: 0.3,
-          spanGaps: false,
-          order: 8
-        },
-        {
-          type: 'line',
-          label: 'IMF Bz (nT)',
-          data: data.imf_bz,
-          borderColor: '#3b82f6',
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHitRadius: 10,
-          fill: false,
-          yAxisID: 'y-imf',
-          tension: 0.3,
-          spanGaps: false,
-          order: 9
-        },
-        {
-          type: 'line',
           label: 'MIM Wind Speed (m/s)',
           data: data.mim_wind_speed,
           borderColor: '#e11d48',
@@ -1721,7 +1609,7 @@ function renderChartAndTable() {
           yAxisID: 'y-wind-speed',
           tension: 0.3,
           spanGaps: false,
-          order: 10
+          order: 1
         },
         {
           type: 'line',
@@ -1735,9 +1623,185 @@ function renderChartAndTable() {
           yAxisID: 'y-wind-dir',
           tension: 0.3,
           spanGaps: false,
-          order: 11
+          order: 2
         }
       ];
+    } else if (currentHistoryGroup === 'magnetic') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'Magnetic Total (nT)',
+          data: data.magnetic,
+          borderColor: '#ff5e3a',
+          borderWidth: 3,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag-total',
+          tension: 0.3,
+          spanGaps: false,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Magnetic X (nT)',
+          data: data.magnetic_x,
+          borderColor: '#ffb300',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag-x',
+          tension: 0.3,
+          spanGaps: false,
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Magnetic Y (nT)',
+          data: data.magnetic_y,
+          borderColor: '#00ff66',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag-y',
+          tension: 0.3,
+          spanGaps: false,
+          order: 2
+        },
+        {
+          type: 'line',
+          label: 'Magnetic Z (nT)',
+          data: data.magnetic_z,
+          borderColor: '#ff00f0',
+          borderWidth: 1.5,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-mag-z',
+          tension: 0.3,
+          spanGaps: false,
+          order: 3
+        }
+      ];
+    } else if (currentHistoryGroup === 'space_weather') {
+      chartDatasets = [
+        {
+          type: 'line',
+          label: 'NOAA Kp Index',
+          data: data.kp,
+          borderColor: '#a855f7',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-kp',
+          tension: 0.3,
+          spanGaps: false,
+          order: 0
+        },
+        {
+          type: 'line',
+          label: 'Wind Speed (km/s)',
+          data: data.wind_speed,
+          borderColor: '#f59e0b',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-speed',
+          tension: 0.3,
+          spanGaps: false,
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Wind Density (p/cm³)',
+          data: data.wind_density,
+          borderColor: '#10b981',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-density',
+          tension: 0.3,
+          spanGaps: false,
+          order: 2
+        },
+        {
+          type: 'line',
+          label: 'IMF Bt (nT)',
+          data: data.imf_bt,
+          borderColor: '#e11d48',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-imf',
+          tension: 0.3,
+          spanGaps: false,
+          order: 3
+        },
+        {
+          type: 'line',
+          label: 'IMF Bz (nT)',
+          data: data.imf_bz,
+          borderColor: '#3b82f6',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHitRadius: 10,
+          fill: false,
+          yAxisID: 'y-imf',
+          tension: 0.3,
+          spanGaps: false,
+          order: 4
+        }
+      ];
+    }
+  }
+
+  // Calculate dynamic boundaries for pressure and magnetic y-axes to fit interval tight without starting at 0
+  let minPress = undefined, maxPress = undefined;
+  let minMagTotal = undefined, maxMagTotal = undefined;
+  let minMagX = undefined, maxMagX = undefined;
+  let minMagY = undefined, maxMagY = undefined;
+  let minMagZ = undefined, maxMagZ = undefined;
+  if (data) {
+    if (data.pressure) {
+      const pressures = data.pressure.filter(v => v !== null && v !== undefined);
+      if (pressures.length > 0) {
+        minPress = Math.floor(Math.min(...pressures)) - 1;
+        maxPress = Math.ceil(Math.max(...pressures)) + 1;
+      }
+    }
+    if (data.magnetic) {
+      const vals = data.magnetic.filter(v => v !== null && v !== undefined);
+      if (vals.length > 0) {
+        minMagTotal = Math.floor(Math.min(...vals)) - 5;
+        maxMagTotal = Math.ceil(Math.max(...vals)) + 5;
+      }
+    }
+    if (data.magnetic_x) {
+      const vals = data.magnetic_x.filter(v => v !== null && v !== undefined);
+      if (vals.length > 0) {
+        minMagX = Math.floor(Math.min(...vals)) - 5;
+        maxMagX = Math.ceil(Math.max(...vals)) + 5;
+      }
+    }
+    if (data.magnetic_y) {
+      const vals = data.magnetic_y.filter(v => v !== null && v !== undefined);
+      if (vals.length > 0) {
+        minMagY = Math.floor(Math.min(...vals)) - 5;
+        maxMagY = Math.ceil(Math.max(...vals)) + 5;
+      }
+    }
+    if (data.magnetic_z) {
+      const vals = data.magnetic_z.filter(v => v !== null && v !== undefined);
+      if (vals.length > 0) {
+        minMagZ = Math.floor(Math.min(...vals)) - 5;
+        maxMagZ = Math.ceil(Math.max(...vals)) + 5;
+      }
     }
   }
 
@@ -2091,7 +2155,9 @@ function renderChartAndTable() {
         'y-press': {
           type: 'linear',
           position: 'left',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          min: minPress,
+          max: maxPress,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure',
           grid: {
             color: 'rgba(255, 255, 255, 0.10)',
             drawOnChartArea: true
@@ -2112,14 +2178,15 @@ function renderChartAndTable() {
             font: { family: 'Outfit', weight: 500 }
           }
         },
-        'y-mag': {
+        'y-mag-total': {
           type: 'linear',
-          position: 'right',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          position: 'left',
+          min: minMagTotal,
+          max: maxMagTotal,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'magnetic',
           grid: {
-            drawOnChartArea: false,
-            tickColor: '#ff5e3a',
-            drawTicks: true
+            color: 'rgba(255, 255, 255, 0.10)',
+            drawOnChartArea: true
           },
           border: {
             color: 'rgba(255, 255, 255, 0.15)',
@@ -2132,8 +2199,89 @@ function renderChartAndTable() {
           },
           title: {
             display: true,
-            text: 'Magnetic Field',
+            text: 'Mag Total',
             color: '#ff5e3a',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-mag-x': {
+          type: 'linear',
+          position: 'right',
+          min: minMagX,
+          max: maxMagX,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#ffb300',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#ffb300',
+            font: { family: 'Outfit' },
+            callback: value => `${value} nT`
+          },
+          title: {
+            display: true,
+            text: 'Mag X',
+            color: '#ffb300',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-mag-y': {
+          type: 'linear',
+          position: 'right',
+          min: minMagY,
+          max: maxMagY,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#00ff66',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#00ff66',
+            font: { family: 'Outfit' },
+            callback: value => `${value} nT`
+          },
+          title: {
+            display: true,
+            text: 'Mag Y',
+            color: '#00ff66',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
+        'y-mag-z': {
+          type: 'linear',
+          position: 'left',
+          min: minMagZ,
+          max: maxMagZ,
+          display: currentViewMode === 'history' && currentHistoryGroup === 'magnetic',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#ff00f0',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#ff00f0',
+            font: { family: 'Outfit' },
+            callback: value => `${value} nT`
+          },
+          title: {
+            display: true,
+            text: 'Mag Z',
+            color: '#ff00f0',
             font: { family: 'Outfit', weight: 500 }
           }
         },
@@ -2142,7 +2290,7 @@ function renderChartAndTable() {
           position: 'right',
           min: 0,
           max: 9,
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'space_weather',
           grid: {
             drawOnChartArea: false,
             tickColor: '#a855f7',
@@ -2167,7 +2315,7 @@ function renderChartAndTable() {
         'y-speed': {
           type: 'linear',
           position: 'left',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'space_weather',
           grid: {
             drawOnChartArea: false,
             tickColor: '#f59e0b',
@@ -2192,7 +2340,7 @@ function renderChartAndTable() {
         'y-density': {
           type: 'linear',
           position: 'right',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'space_weather',
           grid: {
             drawOnChartArea: false,
             tickColor: '#10b981',
@@ -2217,7 +2365,7 @@ function renderChartAndTable() {
         'y-imf': {
           type: 'linear',
           position: 'right',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'space_weather',
           grid: {
             drawOnChartArea: false,
             tickColor: '#e11d48',
@@ -2267,7 +2415,7 @@ function renderChartAndTable() {
         'y-wind-speed': {
           type: 'linear',
           position: 'left',
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure',
           grid: {
             drawOnChartArea: false,
             tickColor: '#e11d48',
@@ -2294,7 +2442,7 @@ function renderChartAndTable() {
           position: 'right',
           min: 0,
           max: 360,
-          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure_magnetic',
+          display: currentViewMode === 'history' && currentHistoryGroup === 'pressure',
           grid: {
             drawOnChartArea: false,
             tickColor: '#d97706',

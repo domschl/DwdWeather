@@ -631,6 +631,7 @@ tbody tr:hover {
 /* History Metric Group Selector */
 .history-metric-group-selector {
   display: flex;
+  flex-wrap: wrap;
   background: rgba(255, 255, 255, 0.03);
   padding: 0.25rem;
   border-radius: 8px;
