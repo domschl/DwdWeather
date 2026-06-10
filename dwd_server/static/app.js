@@ -594,6 +594,7 @@ function getHistoricalFilteredData() {
     result.mim_atm_rad.push(avg(obj.mim_atm_rad));
   });
 
+  result.nullSentinelHours = nullSentinelHours;
   return result;
 }
 
@@ -775,6 +776,21 @@ function getFilteredData() {
   
   return result;
 }
+
+function getHistoryChartData(labels, values, key, nullSentinelHours) {
+  const chartData = [];
+  const sentinels = (nullSentinelHours && nullSentinelHours[key]) || new Set();
+  for (let i = 0; i < labels.length; i++) {
+    const val = values[i];
+    if (val !== null) {
+      chartData.push({ x: labels[i], y: val });
+    } else if (sentinels.has(labels[i])) {
+      chartData.push({ x: labels[i], y: null });
+    }
+  }
+  return chartData;
+}
+
 // Render chart and populate data table
 function renderChartAndTable() {
   const data = getFilteredData();
@@ -1298,7 +1314,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: true,
+        spanGaps: false,
         order: 0
       },
       {
@@ -1313,7 +1329,7 @@ function renderChartAndTable() {
         fill: false,
         yAxisID: 'y-temp',
         tension: 0.3,
-        spanGaps: true,
+        spanGaps: false,
         order: 0
       },
       {
@@ -1328,7 +1344,7 @@ function renderChartAndTable() {
         fill: true,
         yAxisID: 'y-temp',
         tension: 0.35,
-        spanGaps: true,
+        spanGaps: false,
         order: 1
       },
       {
@@ -1360,7 +1376,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Outdoor Temp (°C)',
-          data: data.localTemps,
+          data: getHistoryChartData(data.labels, data.localTemps, 'outdoor_temp', data.nullSentinelHours),
           borderColor: '#00ff66',
           borderWidth: 2,
           pointRadius: 2,
@@ -1368,13 +1384,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Indoor Temp (°C)',
-          data: data.indoorTemps,
+          data: getHistoryChartData(data.labels, data.indoorTemps, 'indoor_temp', data.nullSentinelHours),
           borderColor: '#ff00f0',
           borderWidth: 2,
           pointRadius: 2,
@@ -1382,13 +1398,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Forecast Temp (°C)',
-          data: data.temps,
+          data: getHistoryChartData(data.labels, data.temps, 'forecast_temp', data.nullSentinelHours),
           borderColor: '#ff5e3a',
           borderWidth: 3,
           pointRadius: 1,
@@ -1396,13 +1412,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.35,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
           type: 'line',
           label: 'MIM Temp (°C)',
-          data: data.mim_temp,
+          data: getHistoryChartData(data.labels, data.mim_temp, 'mim_temp', data.nullSentinelHours),
           borderColor: '#10b981',
           borderWidth: 2,
           pointRadius: 2,
@@ -1410,7 +1426,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-temp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
@@ -1427,7 +1443,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Luminosity (lux)',
-          data: data.luminosity,
+          data: getHistoryChartData(data.labels, data.luminosity, 'luminosity', data.nullSentinelHours),
           borderColor: '#00f2fe',
           borderWidth: 2,
           pointRadius: 2,
@@ -1435,13 +1451,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-lux',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'MIM Global Rad (W/m²)',
-          data: data.mim_global_rad,
+          data: getHistoryChartData(data.labels, data.mim_global_rad, 'mim_global_rad', data.nullSentinelHours),
           borderColor: '#f59e0b',
           borderWidth: 2,
           pointRadius: 2,
@@ -1449,13 +1465,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 3
         },
         {
           type: 'line',
           label: 'MIM Diffuse Rad (W/m²)',
-          data: data.mim_diffuse_rad,
+          data: getHistoryChartData(data.labels, data.mim_diffuse_rad, 'mim_diffuse_rad', data.nullSentinelHours),
           borderColor: '#3b82f6',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1463,13 +1479,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 4
         },
         {
           type: 'line',
           label: 'MIM Atm Rad (W/m²)',
-          data: data.mim_atm_rad,
+          data: getHistoryChartData(data.labels, data.mim_atm_rad, 'mim_atm_rad', data.nullSentinelHours),
           borderColor: '#a855f7',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1477,7 +1493,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-solar-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 5
         }
       ];
@@ -1486,7 +1502,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Outdoor Humidity (%)',
-          data: data.humidity,
+          data: getHistoryChartData(data.labels, data.humidity, 'humidity', data.nullSentinelHours),
           borderColor: '#00f2fe',
           borderWidth: 2.5,
           pointRadius: 2,
@@ -1494,13 +1510,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'MIM Humidity (%)',
-          data: data.mim_humidity,
+          data: getHistoryChartData(data.labels, data.mim_humidity, 'mim_humidity', data.nullSentinelHours),
           borderColor: '#10b981',
           borderWidth: 2,
           pointRadius: 2,
@@ -1508,13 +1524,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Forecast Rain Prob (%)',
-          data: data.rainProb,
+          data: getHistoryChartData(data.labels, data.rainProb, 'forecast_wwp', data.nullSentinelHours),
           borderColor: '#3b82f6',
           borderWidth: 2,
           pointRadius: 2,
@@ -1522,7 +1538,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-pct',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
@@ -1542,7 +1558,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Geiger Freq (Hz)',
-          data: data.geiger_freq,
+          data: getHistoryChartData(data.labels, data.geiger_freq, 'geiger_freq', data.nullSentinelHours),
           borderColor: '#ff00f0',
           borderWidth: 2,
           pointRadius: 2,
@@ -1550,13 +1566,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-freq',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Gamma 10min Avg (μSv/h)',
-          data: data.gamma_10m,
+          data: getHistoryChartData(data.labels, data.gamma_10m, 'gamma_10m', data.nullSentinelHours),
           borderColor: '#00ff66',
           borderWidth: 2.5,
           pointRadius: 2,
@@ -1564,13 +1580,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
           type: 'line',
           label: 'Gamma 1min Avg (μSv/h)',
-          data: data.gamma_1m,
+          data: getHistoryChartData(data.labels, data.gamma_1m, 'gamma_1m', data.nullSentinelHours),
           borderColor: '#a855f7',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1578,7 +1594,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-rad',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         }
       ];
@@ -1587,7 +1603,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Air Pressure (hPa)',
-          data: data.pressure,
+          data: getHistoryChartData(data.labels, data.pressure, 'pressure', data.nullSentinelHours),
           borderColor: '#00f2fe',
           borderWidth: 2.5,
           pointRadius: 2,
@@ -1595,13 +1611,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-press',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'MIM Wind Speed (m/s)',
-          data: data.mim_wind_speed,
+          data: getHistoryChartData(data.labels, data.mim_wind_speed, 'mim_wind_speed', data.nullSentinelHours),
           borderColor: '#e11d48',
           borderWidth: 2,
           pointRadius: 2,
@@ -1609,13 +1625,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-speed',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
           type: 'line',
           label: 'MIM Wind Dir (°)',
-          data: data.mim_wind_dir,
+          data: getHistoryChartData(data.labels, data.mim_wind_dir, 'mim_wind_dir', data.nullSentinelHours),
           borderColor: '#d97706',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1623,7 +1639,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-wind-dir',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         }
       ];
@@ -1632,7 +1648,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'Magnetic Total (nT)',
-          data: data.magnetic,
+          data: getHistoryChartData(data.labels, data.magnetic, 'magnetic', data.nullSentinelHours),
           borderColor: '#ff5e3a',
           borderWidth: 3,
           pointRadius: 2,
@@ -1640,13 +1656,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-total',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Magnetic X (nT)',
-          data: data.magnetic_x,
+          data: getHistoryChartData(data.labels, data.magnetic_x, 'magnetic_x', data.nullSentinelHours),
           borderColor: '#ffb300',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1654,13 +1670,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-x',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
           type: 'line',
           label: 'Magnetic Y (nT)',
-          data: data.magnetic_y,
+          data: getHistoryChartData(data.labels, data.magnetic_y, 'magnetic_y', data.nullSentinelHours),
           borderColor: '#00ff66',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1668,13 +1684,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-y',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         },
         {
           type: 'line',
           label: 'Magnetic Z (nT)',
-          data: data.magnetic_z,
+          data: getHistoryChartData(data.labels, data.magnetic_z, 'magnetic_z', data.nullSentinelHours),
           borderColor: '#ff00f0',
           borderWidth: 1.5,
           pointRadius: 2,
@@ -1682,7 +1698,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-mag-z',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 3
         }
       ];
@@ -1691,7 +1707,7 @@ function renderChartAndTable() {
         {
           type: 'line',
           label: 'NOAA Kp Index',
-          data: data.kp,
+          data: getHistoryChartData(data.labels, data.kp, 'kp', data.nullSentinelHours),
           borderColor: '#a855f7',
           borderWidth: 2,
           pointRadius: 2,
@@ -1699,13 +1715,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-kp',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 0
         },
         {
           type: 'line',
           label: 'Wind Speed (km/s)',
-          data: data.wind_speed,
+          data: getHistoryChartData(data.labels, data.wind_speed, 'wind_speed', data.nullSentinelHours),
           borderColor: '#f59e0b',
           borderWidth: 2,
           pointRadius: 2,
@@ -1713,13 +1729,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-speed',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 1
         },
         {
           type: 'line',
           label: 'Wind Density (p/cm³)',
-          data: data.wind_density,
+          data: getHistoryChartData(data.labels, data.wind_density, 'wind_density', data.nullSentinelHours),
           borderColor: '#10b981',
           borderWidth: 2,
           pointRadius: 2,
@@ -1727,13 +1743,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-density',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 2
         },
         {
           type: 'line',
           label: 'IMF Bt (nT)',
-          data: data.imf_bt,
+          data: getHistoryChartData(data.labels, data.imf_bt, 'imf_bt', data.nullSentinelHours),
           borderColor: '#e11d48',
           borderWidth: 2,
           pointRadius: 2,
@@ -1741,13 +1757,13 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 3
         },
         {
           type: 'line',
           label: 'IMF Bz (nT)',
-          data: data.imf_bz,
+          data: getHistoryChartData(data.labels, data.imf_bz, 'imf_bz', data.nullSentinelHours),
           borderColor: '#3b82f6',
           borderWidth: 2,
           pointRadius: 2,
@@ -1755,7 +1771,7 @@ function renderChartAndTable() {
           fill: false,
           yAxisID: 'y-imf',
           tension: 0.3,
-          spanGaps: true,
+          spanGaps: false,
           order: 4
         }
       ];
