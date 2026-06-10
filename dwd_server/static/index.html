@@ -12,6 +12,24 @@
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+  <script>
+    window.onerror = function(message, source, lineno, colno, error) {
+      console.error("LOGGED ERROR:", message, "at", source, ":", lineno);
+      fetch('/api/log_error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, source, lineno, colno, stack: error ? error.stack : '' })
+      }).catch(err => console.error("Failed to send error log:", err));
+    };
+    window.addEventListener('unhandledrejection', function(event) {
+      console.error("LOGGED REJECTION:", event.reason);
+      fetch('/api/log_error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: event.reason ? event.reason.message : 'Unhandled rejection', stack: event.reason ? event.reason.stack : '' })
+      }).catch(err => console.error("Failed to send rejection log:", err));
+    });
+  </script>
 </head>
 <body>
   <div class="app-container">

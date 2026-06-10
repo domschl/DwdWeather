@@ -3,6 +3,7 @@ import time
 import json
 from pathlib import Path
 from typing import Any
+from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.staticfiles import StaticFiles
@@ -310,6 +311,23 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         "mim_diffuse_rad": mim_diffuse_rad,
         "mim_atm_rad": mim_atm_rad
     }
+
+class ClientError(BaseModel):
+    message: str
+    source: str | None = None
+    lineno: int | None = None
+    colno: int | None = None
+    stack: str | None = None
+
+@app.post("/api/log_error")
+def log_client_error(error: ClientError) -> dict[str, str]:
+    logger.error(
+        f"CLIENT ERROR: {error.message}\n"
+        f"  Source: {error.source}:{error.lineno}:{error.colno}\n"
+        f"  Stack: {error.stack}"
+    )
+    print(f"\n[CLIENT EXCEPTION] {error.message}\nSource: {error.source}:{error.lineno}\nStack:\n{error.stack}\n", flush=True)
+    return {"status": "ok"}
 
 @app.get("/api/status")
 def get_status() -> dict[str, Any]:
