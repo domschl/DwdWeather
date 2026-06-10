@@ -1,6 +1,7 @@
 import logging
 import time
 import json
+import atexit
 from pathlib import Path
 from datetime import datetime, timezone
 import threading
@@ -64,7 +65,10 @@ class MQTTManager:
         self.client: mqtt.Client | None = None
         self.thread: threading.Thread | None = None
 
+        self._last_save_time: float = 0.0
+        self._last_saved_slot: str | None = None
         self._load_history()
+        atexit.register(self._save_history)
 
     # -----------------------------------------------------------------------
     # Persistence
@@ -129,15 +133,13 @@ class MQTTManager:
         self.client.on_message = self._on_message
 
         try:
-            self.client.connect(self.host, self.port, keepalive=60)
+            self.client.connect_async(self.host, self.port, keepalive=60)
             self.client.loop_start()
             logger.info("MQTT loop started successfully.")
         except Exception as e:
             logger.error(
-                f"MQTT connection to {self.host} failed: {e}. "
-                "Reconnect will be attempted automatically by paho-mqtt."
+                f"MQTT connection setup failed: {e}"
             )
-            self.client.loop_start()
 
     def _on_connect(
         self,
@@ -230,7 +232,16 @@ class MQTTManager:
                 metric = topic.split("/")[-1]
                 self.db.insert_sensor_reading(slot, topic, metric, avg_val)
 
-            self._save_history()
+            # Throttle disk writes to at most once per 60 seconds, or on slot change
+            if (
+                self._last_save_time == 0.0
+                or now_ts - self._last_save_time >= 60.0
+                or slot != self._last_saved_slot
+            ):
+                self._save_history()
+                self._last_save_time = now_ts
+                self._last_saved_slot = slot
+
             logger.debug(f"Added MQTT reading: {val} for topic {topic} slot {slot}")
 
     # -----------------------------------------------------------------------
