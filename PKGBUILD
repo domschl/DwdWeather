@@ -1,6 +1,6 @@
 # Maintainer: Antigravity Coding Agent <antigravity@google.com>
 pkgname=python-dwdweather
-pkgver=0.3.3
+pkgver=0.3.4
 pkgrel=1
 pkgdesc="Modern DWD Weather Server and Dashboard"
 arch=('any')

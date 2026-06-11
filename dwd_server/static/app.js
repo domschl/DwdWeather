@@ -1099,54 +1099,60 @@ function renderChartAndTable() {
       const lastLabel = new Date(data.labels[data.labels.length - 1]);
       if (now < firstLabel || now > lastLabel) return;
       
-      let closestIdx = -1;
-      let minDiff = Infinity;
+      const xScale = chart.scales.x;
+      if (!xScale) return;
       
-      for (let i = 0; i < data.labels.length; i++) {
-        const diff = Math.abs(new Date(data.labels[i]) - now);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closestIdx = i;
+      const ctx = chart.ctx;
+      const topY = chart.chartArea.top;
+      const bottomY = chart.chartArea.bottom;
+      
+      // Find adjacent forecast points in raw forecast data to interpolate forecast temperature
+      const fcTimes = weatherData && weatherData.forecast ? weatherData.forecast.timesteps : null;
+      const fcTtt = weatherData && weatherData.forecast && weatherData.forecast.elements ? (weatherData.forecast.elements.TTT || []) : [];
+      let interpolatedTemp = null;
+      let fcIdx1 = -1;
+      let fcIdx2 = -1;
+      if (fcTimes) {
+        for (let i = 0; i < fcTimes.length - 1; i++) {
+          const d1 = new Date(fcTimes[i]);
+          const d2 = new Date(fcTimes[i+1]);
+          if (now >= d1 && now <= d2) {
+            fcIdx1 = i;
+            fcIdx2 = i + 1;
+            break;
+          }
+        }
+      }
+      if (fcTimes && fcIdx1 !== -1 && fcIdx2 !== -1) {
+        const d1 = new Date(fcTimes[fcIdx1]);
+        const d2 = new Date(fcTimes[fcIdx2]);
+        const t1 = fcTtt[fcIdx1] !== null ? fcTtt[fcIdx1] - 273.15 : null;
+        const t2 = fcTtt[fcIdx2] !== null ? fcTtt[fcIdx2] - 273.15 : null;
+        if (t1 !== null && t2 !== null) {
+          const weight = (now - d1) / (d2 - d1);
+          interpolatedTemp = t1 + weight * (t2 - t1);
         }
       }
       
-      if (closestIdx !== -1) {
+      // Calculate vertical line X coordinate
+      let x = null;
+      if (xScale.type === 'time') {
+        x = xScale.getPixelForValue(now.getTime());
+      } else {
+        // Fall back to index-based calculation (category scale)
         const meta = chart.getDatasetMeta(0);
-        if (meta && meta.data && meta.data[closestIdx]) {
-          const ctx = chart.ctx;
-          const topY = chart.chartArea.top;
-          const bottomY = chart.chartArea.bottom;
-          
-          // Find adjacent forecast points in raw forecast data to interpolate forecast temperature
-          const fcTimes = weatherData && weatherData.forecast ? weatherData.forecast.timesteps : null;
-          const fcTtt = weatherData && weatherData.forecast && weatherData.forecast.elements ? (weatherData.forecast.elements.TTT || []) : [];
-          let interpolatedTemp = null;
-          let fcIdx1 = -1;
-          let fcIdx2 = -1;
-          if (fcTimes) {
-            for (let i = 0; i < fcTimes.length - 1; i++) {
-              const d1 = new Date(fcTimes[i]);
-              const d2 = new Date(fcTimes[i+1]);
-              if (now >= d1 && now <= d2) {
-                fcIdx1 = i;
-                fcIdx2 = i + 1;
-                break;
-              }
-            }
+        let closestIdx = -1;
+        let minDiff = Infinity;
+        
+        for (let i = 0; i < data.labels.length; i++) {
+          const diff = Math.abs(new Date(data.labels[i]) - now);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = i;
           }
-          if (fcTimes && fcIdx1 !== -1 && fcIdx2 !== -1) {
-            const d1 = new Date(fcTimes[fcIdx1]);
-            const d2 = new Date(fcTimes[fcIdx2]);
-            const t1 = fcTtt[fcIdx1] !== null ? fcTtt[fcIdx1] - 273.15 : null;
-            const t2 = fcTtt[fcIdx2] !== null ? fcTtt[fcIdx2] - 273.15 : null;
-            if (t1 !== null && t2 !== null) {
-              const weight = (now - d1) / (d2 - d1);
-              interpolatedTemp = t1 + weight * (t2 - t1);
-            }
-          }
-          
-          // Find exact horizontal line X coordinate by interpolating between labels
-          let x = null;
+        }
+        
+        if (closestIdx !== -1) {
           let idx1 = -1;
           let idx2 = -1;
           for (let i = 0; i < data.labels.length - 1; i++) {
@@ -1159,142 +1165,142 @@ function renderChartAndTable() {
             }
           }
           
-          if (idx1 !== -1 && idx2 !== -1 && meta.data[idx1] && meta.data[idx2]) {
+          if (idx1 !== -1 && idx2 !== -1 && meta && meta.data && meta.data[idx1] && meta.data[idx2]) {
             const x1 = meta.data[idx1].x;
             const x2 = meta.data[idx2].x;
             const d1 = new Date(data.labels[idx1]);
             const d2 = new Date(data.labels[idx2]);
             const weight = (now - d1) / (d2 - d1);
             x = x1 + weight * (x2 - x1);
-          } else {
-            x = meta.data[closestIdx] ? meta.data[closestIdx].x : null;
-          }
-          
-          // Draw the vertical "now" line
-          if (x !== null && x >= chart.chartArea.left && x <= chart.chartArea.right) {
-            ctx.save();
-            ctx.beginPath();
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([5, 5]); // Dashed line pattern
-            ctx.moveTo(x, topY);
-            ctx.lineTo(x, bottomY);
-            ctx.stroke();
-            
-            const yTempScale = chart.scales['y-temp'];
-            
-            // Draw glowing dot for the interpolated forecast temperature on the vertical line
-            if (interpolatedTemp !== null && yTempScale) {
-              const yVal = yTempScale.getPixelForValue(interpolatedTemp);
-              ctx.beginPath();
-              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
-              ctx.fillStyle = 'rgba(255, 94, 58, 0.35)'; // Semi-transparent neon orange/red
-              ctx.fill();
-              
-              ctx.beginPath();
-              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = '#ff5e3a'; // Solid neon orange/red
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 1;
-              ctx.fill();
-              ctx.stroke();
-            }
-
-            const lastMqtt = weatherData ? weatherData.mqtt_last_measurement : null;
-            const lastMqttIndoor = weatherData ? weatherData.mqtt_indoor_last_measurement : null;
-
-            // Draw glowing dot for the latest sensor temperature on the vertical line
-            if (lastMqtt && lastMqtt.temp !== null && yTempScale) {
-              const yVal = yTempScale.getPixelForValue(lastMqtt.temp);
-              ctx.beginPath();
-              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
-              ctx.fillStyle = 'rgba(0, 255, 102, 0.35)'; // Semi-transparent neon green
-              ctx.fill();
-              
-              ctx.beginPath();
-              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = '#00ff66'; // Solid neon green
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 1;
-              ctx.fill();
-              ctx.stroke();
-            }
-
-            // Draw glowing dot for the latest indoor sensor temperature on the vertical line
-            if (lastMqttIndoor && lastMqttIndoor.temp !== null && yTempScale) {
-              const yVal = yTempScale.getPixelForValue(lastMqttIndoor.temp);
-              ctx.beginPath();
-              ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
-              ctx.fillStyle = 'rgba(255, 0, 240, 0.35)'; // Semi-transparent neon pink
-              ctx.fill();
-              
-              ctx.beginPath();
-              ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
-              ctx.fillStyle = '#ff00f0'; // Solid neon pink
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 1;
-              ctx.fill();
-              ctx.stroke();
-            }
-
-            // Format multi-line capsule text
-            const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-            const lines = [`Now ${timeStr}`];
-            if (interpolatedTemp !== null) {
-              lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
-            }
-            if (lastMqtt && lastMqtt.temp !== null) {
-              lines.push(`Outdoor: ${lastMqtt.temp.toFixed(1)}°C`);
-            }
-            if (lastMqttIndoor && lastMqttIndoor.temp !== null) {
-              lines.push(`Indoor: ${lastMqttIndoor.temp.toFixed(1)}°C`);
-            }
-            
-            // Draw multi-line indicator box
-            ctx.font = '600 10px Outfit';
-            const lineHeights = 15;
-            const padX = 10;
-            const padY = 8;
-            
-            let maxTextWidth = 0;
-            lines.forEach(l => {
-              const w = ctx.measureText(l).width;
-              if (w > maxTextWidth) maxTextWidth = w;
-            });
-            
-            const rectW = maxTextWidth + padX * 2;
-            const rectH = lines.length * lineHeights + padY * 2;
-            
-            // Position capsule adjacent to the vertical line
-            let rectX = x + 10;
-            if (rectX + rectW > chart.chartArea.right) {
-              rectX = x - 10 - rectW;
-            }
-            const rectY = topY + 10;
-            
-            // Draw background capsule for text (transparent gray, opacity 0.5)
-            ctx.fillStyle = 'rgba(22, 24, 38, 0.5)';
-            ctx.beginPath();
-            ctx.roundRect(rectX, rectY, rectW, rectH, 6);
-            ctx.fill();
-            
-            // Add a subtle border outline
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            
-            // Draw text lines (centered within the capsule box)
-            ctx.fillStyle = '#ffffff';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            const textX = rectX + rectW / 2;
-            lines.forEach((line, index) => {
-              ctx.fillText(line, textX, rectY + padY + index * lineHeights);
-            });
-
-            ctx.restore();
+          } else if (meta && meta.data && meta.data[closestIdx]) {
+            x = meta.data[closestIdx].x;
           }
         }
+      }
+      
+      // Draw the vertical "now" line
+      if (x !== null && x >= chart.chartArea.left && x <= chart.chartArea.right) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)'; // Semi-transparent white
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 5]); // Dashed line pattern
+        ctx.moveTo(x, topY);
+        ctx.lineTo(x, bottomY);
+        ctx.stroke();
+        
+        const yTempScale = chart.scales['y-temp'];
+        
+        // Draw glowing dot for the interpolated forecast temperature on the vertical line
+        if (interpolatedTemp !== null && yTempScale) {
+          const yVal = yTempScale.getPixelForValue(interpolatedTemp);
+          ctx.beginPath();
+          ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(255, 94, 58, 0.35)'; // Semi-transparent neon orange/red
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ff5e3a'; // Solid neon orange/red
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        const lastMqtt = weatherData ? weatherData.mqtt_last_measurement : null;
+        const lastMqttIndoor = weatherData ? weatherData.mqtt_indoor_last_measurement : null;
+
+        // Draw glowing dot for the latest sensor temperature on the vertical line
+        if (lastMqtt && lastMqtt.temp !== null && yTempScale) {
+          const yVal = yTempScale.getPixelForValue(lastMqtt.temp);
+          ctx.beginPath();
+          ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(0, 255, 102, 0.35)'; // Semi-transparent neon green
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = '#00ff66'; // Solid neon green
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        // Draw glowing dot for the latest indoor sensor temperature on the vertical line
+        if (lastMqttIndoor && lastMqttIndoor.temp !== null && yTempScale) {
+          const yVal = yTempScale.getPixelForValue(lastMqttIndoor.temp);
+          ctx.beginPath();
+          ctx.arc(x, yVal, 8, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(255, 0, 240, 0.35)'; // Semi-transparent neon pink
+          ctx.fill();
+          
+          ctx.beginPath();
+          ctx.arc(x, yVal, 4, 0, 2 * Math.PI);
+          ctx.fillStyle = '#ff00f0'; // Solid neon pink
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.fill();
+          ctx.stroke();
+        }
+
+        // Format multi-line capsule text
+        const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+        const lines = [`Now ${timeStr}`];
+        if (interpolatedTemp !== null) {
+          lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
+        }
+        if (lastMqtt && lastMqtt.temp !== null) {
+          lines.push(`Outdoor: ${lastMqtt.temp.toFixed(1)}°C`);
+        }
+        if (lastMqttIndoor && lastMqttIndoor.temp !== null) {
+          lines.push(`Indoor: ${lastMqttIndoor.temp.toFixed(1)}°C`);
+        }
+        
+        // Draw multi-line indicator box
+        ctx.font = '600 10px Outfit';
+        const lineHeights = 15;
+        const padX = 10;
+        const padY = 8;
+        
+        let maxTextWidth = 0;
+        lines.forEach(l => {
+          const w = ctx.measureText(l).width;
+          if (w > maxTextWidth) maxTextWidth = w;
+        });
+        
+        const rectW = maxTextWidth + padX * 2;
+        const rectH = lines.length * lineHeights + padY * 2;
+        
+        // Position capsule adjacent to the vertical line
+        let rectX = x + 10;
+        if (rectX + rectW > chart.chartArea.right) {
+          rectX = x - 10 - rectW;
+        }
+        const rectY = topY + 10;
+        
+        // Draw background capsule for text (transparent gray, opacity 0.5)
+        ctx.fillStyle = 'rgba(22, 24, 38, 0.5)';
+        ctx.beginPath();
+        ctx.roundRect(rectX, rectY, rectW, rectH, 6);
+        ctx.fill();
+        
+        // Add a subtle border outline
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Draw text lines (centered within the capsule box)
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        const textX = rectX + rectW / 2;
+        lines.forEach((line, index) => {
+          ctx.fillText(line, textX, rectY + padY + index * lineHeights);
+        });
+
+        ctx.restore();
       }
     }
   };
