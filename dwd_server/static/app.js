@@ -791,6 +791,47 @@ function getHistoryChartData(labels, values, key, nullSentinelHours) {
   return chartData;
 }
 
+function formatMetricValue(label, val) {
+  if (val === null || val === undefined) return 'N/A';
+  if (label.includes('Temp')) {
+    return val.toFixed(1) + ' °C';
+  } else if (label.includes('Humidity') || label.includes('Prob')) {
+    return Math.round(val) + ' %';
+  } else if (label.includes('Duration')) {
+    return Math.round(val) + ' min';
+  } else if (label.includes('Luminosity')) {
+    return val.toFixed(1) + ' lx';
+  } else if (label.includes('Rain Sensor')) {
+    return val.toFixed(2);
+  } else if (label.includes('Geiger')) {
+    return val.toFixed(2) + ' Hz';
+  } else if (label.includes('Gamma')) {
+    return val.toFixed(3) + ' μSv/h';
+  } else if (label.includes('Pressure')) {
+    return val.toFixed(1) + ' hPa';
+  } else if (label.includes('Magnetic')) {
+    return val.toFixed(1) + ' nT';
+  } else if (label.includes('Kp')) {
+    return val.toFixed(2);
+  } else if (label.includes('Wind Speed')) {
+    if (label.includes('MIM')) {
+      return val.toFixed(1) + ' m/s';
+    } else {
+      return val.toFixed(1) + ' km/s';
+    }
+  } else if (label.includes('Wind Dir')) {
+    return Math.round(val) + '°';
+  } else if (label.includes('Wind Density')) {
+    return val.toFixed(1) + ' p/cm³';
+  } else if (label.includes('IMF')) {
+    return val.toFixed(1) + ' nT';
+  } else if (label.includes('Rad')) {
+    return val.toFixed(1) + ' W/m²';
+  } else {
+    return typeof val === 'number' ? val.toFixed(1) : val;
+  }
+}
+
 // Render chart and populate data table
 function renderChartAndTable() {
   const data = getFilteredData();
@@ -1134,25 +1175,25 @@ function renderChartAndTable() {
         }
       }
       
+      // Find the closest index in labels to get flat array values
+      let closestIdx = -1;
+      let minDiff = Infinity;
+      for (let i = 0; i < data.labels.length; i++) {
+        const diff = Math.abs(new Date(data.labels[i]) - now);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
+      }
+      
       // Calculate vertical line X coordinate
       let x = null;
       if (xScale.type === 'time') {
         x = xScale.getPixelForValue(now.getTime());
       } else {
         // Fall back to index-based calculation (category scale)
-        const meta = chart.getDatasetMeta(0);
-        let closestIdx = -1;
-        let minDiff = Infinity;
-        
-        for (let i = 0; i < data.labels.length; i++) {
-          const diff = Math.abs(new Date(data.labels[i]) - now);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestIdx = i;
-          }
-        }
-        
         if (closestIdx !== -1) {
+          const meta = chart.getDatasetMeta(0);
           let idx1 = -1;
           let idx2 = -1;
           for (let i = 0; i < data.labels.length - 1; i++) {
@@ -1248,15 +1289,41 @@ function renderChartAndTable() {
         // Format multi-line capsule text
         const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
         const lines = [`Now ${timeStr}`];
-        if (interpolatedTemp !== null) {
-          lines.push(`Fcst: ${interpolatedTemp.toFixed(1)}°C`);
-        }
-        if (lastMqtt && lastMqtt.temp !== null) {
-          lines.push(`Outdoor: ${lastMqtt.temp.toFixed(1)}°C`);
-        }
-        if (lastMqttIndoor && lastMqttIndoor.temp !== null) {
-          lines.push(`Indoor: ${lastMqttIndoor.temp.toFixed(1)}°C`);
-        }
+
+        // Loop through all visible datasets to build lines for the indicator capsule
+        chart.data.datasets.forEach((dataset, idx) => {
+          if (!chart.isDatasetVisible(idx)) return;
+          
+          let val = null;
+          if (dataset.data && dataset.data.length > 0) {
+            const first = dataset.data[0];
+            if (first && typeof first === 'object' && 'x' in first) {
+              // [{x, y}] format: find closest timestamp
+              let minDiff = Infinity;
+              for (let i = 0; i < dataset.data.length; i++) {
+                const item = dataset.data[i];
+                const itemDate = new Date(item.x);
+                if (isNaN(itemDate.getTime())) continue;
+                const diff = Math.abs(itemDate - now);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  if (diff <= 4 * 3600 * 1000) { // max 4 hour gap
+                    val = item.y;
+                  }
+                }
+              }
+            } else {
+              // Flat array: get element at closestIdx
+              if (closestIdx !== -1 && closestIdx < dataset.data.length) {
+                val = dataset.data[closestIdx];
+              }
+            }
+          }
+          
+          const label = dataset.label || '';
+          const valStr = formatMetricValue(label, val);
+          lines.push(`${label}: ${valStr}`);
+        });
         
         // Draw multi-line indicator box
         ctx.font = '600 10px Outfit';
