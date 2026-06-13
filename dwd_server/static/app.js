@@ -36,7 +36,7 @@ if (typeof window !== 'undefined' && window.Chart) {
 }
 
 let weatherData = null;
-let currentViewMode = 'history'; // 'near', 'extended', or 'history'
+let currentViewMode = 'near'; // 'near', 'extended', or 'history'
 let weatherChart = null;
 let historyData = null;
 let currentHistoryGroup = 'space_weather'; // 'temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'
