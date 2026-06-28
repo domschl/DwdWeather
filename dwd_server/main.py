@@ -3,6 +3,7 @@ import time
 import json
 from pathlib import Path
 from typing import Any
+import urllib.request
 from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException, status
@@ -118,6 +119,53 @@ def write_cache_to_disk(forecast: WeatherForecast) -> None:
         db.insert_forecast_readings(forecast.station_id, forecast.timesteps, forecast.elements)
     except Exception as e:
         logger.error(f"Failed to write cache to disk: {e}")
+
+ENSEMBLE_CACHE_FILE = CACHE_DIR / "ensemble_cache.json"
+ENSEMBLE_CACHE_EXPIRY_SECS = 10800  # 3 hours
+
+class EnsembleCacheEntry:
+    def __init__(self, last_updated: float, data: dict[str, Any]) -> None:
+        self.last_updated = last_updated
+        self.data = data
+
+_ensemble_memory_cache: EnsembleCacheEntry | None = None
+
+def load_ensemble_cache_from_disk() -> EnsembleCacheEntry | None:
+    global _ensemble_memory_cache
+    if _ensemble_memory_cache is not None:
+        return _ensemble_memory_cache
+
+    if not ENSEMBLE_CACHE_FILE.is_file():
+        return None
+
+    try:
+        with open(ENSEMBLE_CACHE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            last_updated = float(data.get("last_updated", 0.0))
+            payload = data.get("data")
+            if payload:
+                _ensemble_memory_cache = EnsembleCacheEntry(last_updated, payload)
+                return _ensemble_memory_cache
+    except Exception as e:
+        logger.warning(f"Failed to read ensemble cache file from disk: {e}")
+    return None
+
+def write_ensemble_cache_to_disk(payload: dict[str, Any]) -> None:
+    global _ensemble_memory_cache
+    ensure_cache_dir()
+    last_updated = time.time()
+    _ensemble_memory_cache = EnsembleCacheEntry(last_updated, payload)
+    try:
+        data = {
+            "last_updated": last_updated,
+            "data": payload
+        }
+        with open(ENSEMBLE_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info("Ensemble forecast cache written to disk.")
+    except Exception as e:
+        logger.error(f"Failed to write ensemble cache to disk: {e}")
+
 
 # ---------------------------------------------------------------------------
 # Poll intervals
@@ -312,6 +360,69 @@ def get_history(start: str, end: str) -> dict[str, Any]:
         "mim_atm_rad": mim_atm_rad
     }
 
+def fetch_ensemble_forecast(lat: float, lon: float) -> dict[str, Any] | None:
+    # Fetch 15 days of ECMWF IFS ensemble forecast from Open-Meteo
+    url = f"https://ensemble-api.open-meteo.com/v1/ensemble?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&models=ecmwf_ifs025&forecast_days=15&timezone=Europe/Berlin"
+    logger.info(f"Fetching ensemble forecast from Open-Meteo: {url}")
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'DwdWeatherModernizer/1.0'})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res_data = response.read()
+            return json.loads(res_data)
+    except Exception as e:
+        logger.error(f"Failed to fetch ensemble forecast from Open-Meteo: {e}")
+        return None
+
+@app.get("/api/ensemble")
+def get_ensemble() -> dict[str, Any]:
+    now = time.time()
+    cache = load_ensemble_cache_from_disk()
+    
+    # Check if cache is still valid
+    if cache is not None:
+        elapsed = now - cache.last_updated
+        if elapsed < ENSEMBLE_CACHE_EXPIRY_SECS:
+            return {
+                "source": "cache",
+                "last_updated": cache.last_updated,
+                "data": cache.data
+            }
+            
+    # Cache is either missing or expired. Let's try to fetch new data.
+    # Get active station coordinates from forecast cache
+    dwd_cache = load_cache_from_disk()
+    if dwd_cache is not None and dwd_cache.forecast.coordinates:
+        # coordinates is [longitude, latitude, elevation]
+        lon = dwd_cache.forecast.coordinates[0]
+        lat = dwd_cache.forecast.coordinates[1]
+    else:
+        # Fallback to Munich coordinates if DWD cache not loaded yet
+        lat, lon = 48.17, 11.53
+        logger.warning(f"DWD forecast cache not available for coordinate lookup. Falling back to Munich coordinates ({lat}, {lon}).")
+        
+    payload = fetch_ensemble_forecast(lat, lon)
+    if payload is not None:
+        write_ensemble_cache_to_disk(payload)
+        return {
+            "source": "network",
+            "last_updated": now,
+            "data": payload
+        }
+    
+    # If fetch failed, return cached data (even if expired) or raise error
+    if cache is not None:
+        logger.warning("Ensemble fetch failed; falling back to stale cache.")
+        return {
+            "source": "cache (stale)",
+            "last_updated": cache.last_updated,
+            "data": cache.data
+        }
+        
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Failed to retrieve ensemble data from Open-Meteo and no cached data is available."
+    )
+
 class ClientError(BaseModel):
     message: str
     source: str | None = None
@@ -394,6 +505,16 @@ def get_status() -> dict[str, Any]:
     noaa_next = max(0.0, NOAA_INTERVAL_SECS - noaa_info.get("age_secs")) if noaa_info.get("age_secs") is not None else None
     mim_next = max(0.0, MIM_INTERVAL_SECS - mim_info.get("age_secs")) if mim_info.get("age_secs") is not None else None
 
+    # --- Ensemble Forecast ---
+    ens_cache = load_ensemble_cache_from_disk()
+    if ens_cache is not None:
+        ens_age = now_wall - ens_cache.last_updated
+        ens_last = ens_cache.last_updated
+    else:
+        ens_age = None
+        ens_last = None
+    ens_next = max(0.0, ENSEMBLE_CACHE_EXPIRY_SECS - ens_age) if ens_age is not None else None
+
     return {
         "sources": {
             "forecast": {
@@ -403,6 +524,14 @@ def get_status() -> dict[str, Any]:
                 "interval_secs": FORECAST_MIN_INTERVAL_SECS,
                 "is_stale": forecast_age is None or forecast_age > FORECAST_MIN_INTERVAL_SECS * 2,
                 "next_poll_in": forecast_next,
+            },
+            "ensemble": {
+                "label": "ECMWF Ensemble",
+                "last_updated": ens_last,
+                "age_secs": ens_age,
+                "interval_secs": ENSEMBLE_CACHE_EXPIRY_SECS,
+                "is_stale": ens_age is None or ens_age > ENSEMBLE_CACHE_EXPIRY_SECS * 1.5,
+                "next_poll_in": ens_next,
             },
             "noaa": {
                 "label": "NOAA Space Weather",

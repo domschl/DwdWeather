@@ -36,7 +36,8 @@ if (typeof window !== 'undefined' && window.Chart) {
 }
 
 let weatherData = null;
-let currentViewMode = 'near'; // 'near', 'extended', or 'history'
+let ensembleData = null;
+let currentViewMode = 'near'; // 'near', 'extended', 'ensemble', or 'history'
 let weatherChart = null;
 let historyData = null;
 let currentHistoryGroup = 'space_weather'; // 'temp_solar', 'moisture', 'radiation', 'pressure', 'magnetic', 'space_weather'
@@ -69,6 +70,25 @@ async function fetchForecast() {
   }
 }
 
+// Fetch ensemble weather data from API
+async function fetchEnsembleData() {
+  setLoadingState(true);
+  try {
+    const response = await fetch('/api/ensemble');
+    if (!response.ok) {
+      throw new Error(`Server returned HTTP ${response.status}`);
+    }
+    const res = await response.json();
+    ensembleData = res.data;
+    renderChartAndTable();
+  } catch (error) {
+    console.error('Error fetching ensemble forecast:', error);
+    alert(`Failed to load ensemble data: ${error.message}`);
+  } finally {
+    setLoadingState(false);
+  }
+}
+
 // Trigger manual refresh
 async function triggerRefresh() {
   const refreshBtn = document.getElementById('btn-refresh');
@@ -92,7 +112,12 @@ async function triggerRefresh() {
       showToast("Forecast successfully refreshed from DWD!");
     }
     
-    updateDashboard();
+    ensembleData = null;
+    if (currentViewMode === 'ensemble') {
+      await fetchEnsembleData();
+    } else {
+      updateDashboard();
+    }
   } catch (error) {
     console.error('Error refreshing forecast:', error);
     alert(`Refresh failed: ${error.message}`);
@@ -368,13 +393,14 @@ function updateDashboard() {
   renderChartAndTable();
 }
 
-// Switch between Near-term (48h detailed), Extended (10d downsampled), or History
+// Switch between Near-term (48h detailed), Extended (10d downsampled), Ensemble, or History
 function switchViewMode(mode) {
   currentViewMode = mode;
   
   // Update Tab active style
   document.getElementById('btn-tab-near').classList.toggle('active', mode === 'near');
   document.getElementById('btn-tab-extended').classList.toggle('active', mode === 'extended');
+  document.getElementById('btn-tab-ensemble').classList.toggle('active', mode === 'ensemble');
   document.getElementById('btn-tab-history').classList.toggle('active', mode === 'history');
   
   const historyControls = document.getElementById('history-controls');
@@ -386,6 +412,13 @@ function switchViewMode(mode) {
       setHistoryRange(7);
     } else {
       fetchHistoryData();
+    }
+  } else if (mode === 'ensemble') {
+    historyControls.style.display = 'none';
+    if (!ensembleData) {
+      fetchEnsembleData();
+    } else {
+      renderChartAndTable();
     }
   } else {
     historyControls.style.display = 'none';
@@ -652,8 +685,213 @@ function getLocalTempForHour(isoTime, mqttHistory) {
   return count > 0 ? (sum / count) : null;
 }
 
+// Formats ECMWF ensemble forecasts for the spaghetti plots and comparison table
+function getEnsembleFilteredData() {
+  if (!ensembleData || !ensembleData.hourly) return null;
+  
+  const hourly = ensembleData.hourly;
+  const times = hourly.time;
+  const labels = times.map(t => new Date(t).toISOString());
+  
+  const tempMean = hourly.temperature_2m || [];
+  const precipMean = hourly.precipitation || [];
+  
+  // Calculate accumulated precipitation for mean
+  const precipMeanAcc = [];
+  let accumMean = 0;
+  for (let i = 0; i < precipMean.length; i++) {
+    if (precipMean[i] !== null && precipMean[i] !== undefined) {
+      accumMean += precipMean[i];
+    }
+    precipMeanAcc.push(accumMean);
+  }
+  
+  // Align DWD forecast values (Temp and Accumulated Rain) to the ensemble timeline
+  const dwdTempList = new Array(times.length).fill(null);
+  const dwdPrecipList = new Array(times.length).fill(null);
+  
+  if (weatherData && weatherData.forecast) {
+    const fc = weatherData.forecast;
+    const fcTimes = fc.timesteps;
+    const fcTtt = fc.elements.TTT || [];
+    const fcRrc = fc.elements.RR1c || [];
+    
+    // Create mapping of time (rounded to hour) to value
+    const fcTempMap = new Map();
+    const fcPrecipMap = new Map();
+    let dwdPrecipAccum = 0;
+    
+    for (let i = 0; i < fcTimes.length; i++) {
+      const ms = new Date(fcTimes[i]).getTime();
+      // Round to nearest hour
+      const msRounded = Math.round(ms / 3600000) * 3600000;
+      
+      if (fcTtt[i] !== null) {
+        fcTempMap.set(msRounded, fcTtt[i] - 273.15);
+      }
+      if (fcRrc[i] !== null) {
+        dwdPrecipAccum += fcRrc[i];
+        fcPrecipMap.set(msRounded, dwdPrecipAccum);
+      }
+    }
+    
+    // Fill the aligned lists
+    for (let i = 0; i < times.length; i++) {
+      const ensMs = new Date(times[i]).getTime();
+      const ensMsRounded = Math.round(ensMs / 3600000) * 3600000;
+      
+      if (fcTempMap.has(ensMsRounded)) {
+        dwdTempList[i] = fcTempMap.get(ensMsRounded);
+      }
+      if (fcPrecipMap.has(ensMsRounded)) {
+        dwdPrecipList[i] = fcPrecipMap.get(ensMsRounded);
+      }
+    }
+  }
+  
+  // Build chart datasets
+  const chartDatasets = [];
+  
+  // 1. Temperature Members
+  for (let m = 1; m <= 50; m++) {
+    const memberKey = `temperature_2m_member${m.toString().padStart(2, '0')}`;
+    const memberData = hourly[memberKey];
+    if (memberData) {
+      const points = memberData.map((val, idx) => ({ x: labels[idx], y: val }));
+      chartDatasets.push({
+        type: 'line',
+        label: `Member Temp ${m}`,
+        data: points,
+        borderColor: 'rgba(255, 94, 58, 0.07)',
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: false,
+        yAxisID: 'y-temp',
+        tension: 0.1,
+        order: 10
+      });
+    }
+  }
+  
+  // 2. Precipitation Members (Accumulated)
+  for (let m = 1; m <= 50; m++) {
+    const memberKey = `precipitation_member${m.toString().padStart(2, '0')}`;
+    const memberData = hourly[memberKey];
+    if (memberData) {
+      const points = [];
+      let accum = 0;
+      for (let i = 0; i < memberData.length; i++) {
+        if (memberData[i] !== null && memberData[i] !== undefined) {
+          accum += memberData[i];
+        }
+        points.push({ x: labels[i], y: accum });
+      }
+      chartDatasets.push({
+        type: 'line',
+        label: `Member Precip ${m}`,
+        data: points,
+        borderColor: 'rgba(59, 130, 246, 0.07)',
+        borderWidth: 1,
+        pointRadius: 0,
+        fill: false,
+        yAxisID: 'y-precip-acc',
+        tension: 0.1,
+        order: 11
+      });
+    }
+  }
+  
+  // 3. Ensemble Temp Mean
+  chartDatasets.push({
+    type: 'line',
+    label: 'Ensemble Temp Mean (°C)',
+    data: tempMean.map((val, idx) => ({ x: labels[idx], y: val })),
+    borderColor: '#ff5e3a',
+    borderWidth: 3,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    fill: false,
+    yAxisID: 'y-temp',
+    tension: 0.2,
+    order: 2
+  });
+  
+  // 4. Ensemble Precipitation Mean (Accumulated)
+  chartDatasets.push({
+    type: 'line',
+    label: 'Ensemble Precip Mean (mm)',
+    data: precipMeanAcc.map((val, idx) => ({ x: labels[idx], y: val })),
+    borderColor: '#3b82f6',
+    borderWidth: 3,
+    pointRadius: 0,
+    pointHoverRadius: 4,
+    fill: false,
+    yAxisID: 'y-precip-acc',
+    tension: 0.2,
+    order: 3
+  });
+  
+  // 5. DWD Forecast Temp (Overlay)
+  const dwdTempPoints = [];
+  for (let i = 0; i < dwdTempList.length; i++) {
+    if (dwdTempList[i] !== null) {
+      dwdTempPoints.push({ x: labels[i], y: dwdTempList[i] });
+    }
+  }
+  if (dwdTempPoints.length > 0) {
+    chartDatasets.push({
+      type: 'line',
+      label: 'DWD Forecast Temp (°C)',
+      data: dwdTempPoints,
+      borderColor: '#00ff66',
+      borderWidth: 2,
+      borderDash: [5, 5],
+      pointRadius: 0,
+      fill: false,
+      yAxisID: 'y-temp',
+      tension: 0.2,
+      order: 1
+    });
+  }
+  
+  // 6. DWD Forecast Precip (Overlay)
+  const dwdPrecipPoints = [];
+  for (let i = 0; i < dwdPrecipList.length; i++) {
+    if (dwdPrecipList[i] !== null) {
+      dwdPrecipPoints.push({ x: labels[i], y: dwdPrecipList[i] });
+    }
+  }
+  if (dwdPrecipPoints.length > 0) {
+    chartDatasets.push({
+      type: 'line',
+      label: 'DWD Forecast Precip (mm)',
+      data: dwdPrecipPoints,
+      borderColor: '#e879f9',
+      borderWidth: 2,
+      borderDash: [5, 5],
+      pointRadius: 0,
+      fill: false,
+      yAxisID: 'y-precip-acc',
+      tension: 0.2,
+      order: 4
+    });
+  }
+  
+  return {
+    labels: labels,
+    ensembleTemp: tempMean,
+    dwdTemp: dwdTempList,
+    ensemblePrecip: precipMeanAcc,
+    dwdPrecip: dwdPrecipList,
+    chartDatasets: chartDatasets
+  };
+}
+
 // Filters and formats datasets based on the selected view mode
 function getFilteredData() {
+  if (currentViewMode === 'ensemble') {
+    return getEnsembleFilteredData();
+  }
   if (currentViewMode === 'history') {
     return getHistoricalFilteredData();
   }
@@ -837,7 +1075,22 @@ function renderChartAndTable() {
   tbody.innerHTML = '';
   
   let columns = [];
-  if (currentViewMode !== 'history') {
+  if (currentViewMode === 'ensemble') {
+    theadTr.innerHTML = `
+      <th>Time (Local)</th>
+      <th>Ensemble Temp Mean (°C)</th>
+      <th>DWD Forecast Temp (°C)</th>
+      <th>Ensemble Accum. Precip (mm)</th>
+      <th>DWD Forecast Precip (mm)</th>
+    `;
+    columns = [
+      { name: 'time', format: formatLocalTime },
+      { name: 'ensembleTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'dwdTemp', format: v => v !== null ? `${v.toFixed(1)} °C` : '-' },
+      { name: 'ensemblePrecip', format: v => v !== null ? `${v.toFixed(1)} mm` : '-' },
+      { name: 'dwdPrecip', format: v => v !== null ? `${v.toFixed(1)} mm` : '-' }
+    ];
+  } else if (currentViewMode !== 'history') {
     theadTr.innerHTML = `
       <th>Time (Local)</th>
       <th>Forecast Temp (°C)</th>
@@ -1332,7 +1585,9 @@ function renderChartAndTable() {
   };
   
   let chartDatasets = [];
-  if (currentViewMode !== 'history') {
+  if (currentViewMode === 'ensemble') {
+    chartDatasets = data.chartDatasets;
+  } else if (currentViewMode !== 'history') {
     chartDatasets = [
       {
         type: 'line',
@@ -1876,6 +2131,9 @@ function renderChartAndTable() {
             font: {
               family: 'Outfit',
               size: 12
+            },
+            filter: function(item, chart) {
+              return !item.text.includes('Member');
             }
           }
         },
@@ -1919,6 +2177,8 @@ function renderChartAndTable() {
               if (val !== null && val !== undefined) {
                 if (label.includes('Temp')) {
                   label += val.toFixed(1) + ' °C';
+                } else if (label.includes('Precip') || label.includes('Rain Amount')) {
+                  label += val.toFixed(1) + ' mm';
                 } else if (label.includes('Humidity') || label.includes('Prob')) {
                   label += Math.round(val) + ' %';
                 } else if (label.includes('Duration')) {
@@ -1961,11 +2221,11 @@ function renderChartAndTable() {
         }
       },
       scales: {
-        x: (currentViewMode === 'near' || currentViewMode === 'history') ? {
+        x: (currentViewMode === 'near' || currentViewMode === 'history' || currentViewMode === 'ensemble') ? {
           type: 'time',
           time: {
-            unit: currentViewMode === 'history' ? 'day' : 'hour',
-            stepSize: currentViewMode === 'history' ? 1 : 6,
+            unit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 'day' : 'hour',
+            stepSize: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 1 : 6,
             displayFormats: {
               hour: 'EEE HH:mm',
               day: 'EEE dd/MM',
@@ -1986,12 +2246,12 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
-            maxTicksLimit: currentViewMode === 'history' ? 10 : 12,
+            maxTicksLimit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 15 : 12,
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
               const date = new Date(tickVal);
               if (isNaN(date.getTime())) return value;
-              if (currentViewMode === 'history') {
+              if (currentViewMode === 'history' || currentViewMode === 'ensemble') {
                 return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' });
               }
               const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
@@ -2054,7 +2314,7 @@ function renderChartAndTable() {
           position: 'left',
           min: 0,
           max: 100,
-          display: currentViewMode !== 'history' || currentHistoryGroup === 'moisture',
+          display: (currentViewMode !== 'history' && currentViewMode !== 'ensemble') || currentHistoryGroup === 'moisture',
           grid: {
             color: 'rgba(255, 255, 255, 0.10)',
             drawOnChartArea: currentViewMode === 'history'
@@ -2075,12 +2335,38 @@ function renderChartAndTable() {
             font: { family: 'Outfit', weight: 500 }
           }
         },
+        'y-precip-acc': {
+          type: 'linear',
+          position: 'right',
+          min: 0,
+          display: currentViewMode === 'ensemble',
+          grid: {
+            drawOnChartArea: false,
+            tickColor: '#3b82f6',
+            drawTicks: true
+          },
+          border: {
+            color: 'rgba(255, 255, 255, 0.15)',
+            display: true
+          },
+          ticks: {
+            color: '#3b82f6',
+            font: { family: 'Outfit' },
+            callback: value => `${value} mm`
+          },
+          title: {
+            display: true,
+            text: 'Accumulated Precip (mm)',
+            color: '#3b82f6',
+            font: { family: 'Outfit', weight: 500 }
+          }
+        },
         'y-sun': {
           type: 'linear',
           position: 'right',
           min: 0,
           max: 60,
-          display: currentViewMode !== 'history' || currentHistoryGroup === 'temp_solar',
+          display: (currentViewMode !== 'history' && currentViewMode !== 'ensemble') || currentHistoryGroup === 'temp_solar',
           grid: {
             drawOnChartArea: false,
             tickColor: '#ffb300',
