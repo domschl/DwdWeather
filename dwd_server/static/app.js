@@ -2230,6 +2230,8 @@ function renderChartAndTable() {
       scales: {
         x: {
           type: 'time',
+          min: new Date(data.labels[0]).getTime(),
+          max: new Date(data.labels[data.labels.length - 1]).getTime(),
           time: {
             unit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 'day' : 'hour',
             stepSize: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 1 : (currentViewMode === 'extended' ? 12 : 6),
@@ -2253,6 +2255,7 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
+            align: 'inner',
             maxTicksLimit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 15 : 20,
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
@@ -2268,6 +2271,8 @@ function renderChartAndTable() {
         x2: {
           type: 'time',
           position: 'bottom',
+          min: new Date(data.labels[0]).getTime(),
+          max: new Date(data.labels[data.labels.length - 1]).getTime(),
           time: {
             unit: 'day',
             stepSize: 1,
@@ -2301,7 +2306,10 @@ function renderChartAndTable() {
               }
             });
 
-            scale.ticks = tickValues.map(val => ({ value: val }));
+            // Ensure ticks fall within scale limits to prevent layout overflow/stretching
+            scale.ticks = tickValues
+              .filter(val => val >= scale.min && val <= scale.max)
+              .map(val => ({ value: val }));
           },
           grid: {
             drawOnChartArea: false,
@@ -2315,6 +2323,7 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10, weight: 'bold' },
+            align: 'inner',
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
               const date = new Date(tickVal);
