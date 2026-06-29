@@ -1064,6 +1064,26 @@ function getHistoryChartData(labels, values, key, nullSentinelHours) {
   return chartData;
 }
 
+// Helper to get Berlin midnight for a given YYYY-MM-DD string
+function getBerlinMidnight(dayStr) {
+  const [year, month, day] = dayStr.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  const format = d.toLocaleString('sv', { timeZone: 'Europe/Berlin' });
+  const match = format.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!match) return d;
+  
+  const localMs = Date.UTC(
+    parseInt(match[1]),
+    parseInt(match[2]) - 1,
+    parseInt(match[3]),
+    parseInt(match[4]),
+    parseInt(match[5]),
+    parseInt(match[6])
+  );
+  const offsetMs = localMs - d.getTime();
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMs);
+}
+
 // Render chart and populate data table
 function renderChartAndTable() {
   const data = getFilteredData();
@@ -1270,24 +1290,7 @@ function renderChartAndTable() {
         const uniqueDays = Object.keys(dayGroups).sort();
         if (uniqueDays.length === 0) return;
         
-        const getBerlinMidnight = (dayStr) => {
-          const [year, month, day] = dayStr.split('-').map(Number);
-          const d = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-          const format = d.toLocaleString('sv', { timeZone: 'Europe/Berlin' });
-          const match = format.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
-          if (!match) return d;
-          
-          const localMs = Date.UTC(
-            parseInt(match[1]),
-            parseInt(match[2]) - 1,
-            parseInt(match[3]),
-            parseInt(match[4]),
-            parseInt(match[5]),
-            parseInt(match[6])
-          );
-          const offsetMs = localMs - d.getTime();
-          return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMs);
-        };
+        // Uses the global getBerlinMidnight function
 
         const getX = (i) => {
           // 1. Try dataset element coordinate
@@ -2271,6 +2274,34 @@ function renderChartAndTable() {
             displayFormats: {
               day: 'EEE dd.'
             }
+          },
+          afterBuildTicks: function(scale) {
+            if (!data || !data.labels || data.labels.length === 0) return;
+            const uniqueDays = [];
+            const dayToFirstMs = {};
+            data.labels.forEach(label => {
+              const date = new Date(label);
+              if (isNaN(date.getTime())) return;
+              const dayStr = date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD"
+              if (!uniqueDays.includes(dayStr)) {
+                uniqueDays.push(dayStr);
+                dayToFirstMs[dayStr] = date.getTime();
+              }
+            });
+
+            const tickValues = [];
+            uniqueDays.forEach((dayStr, index) => {
+              if (index === 0) {
+                // Today's date tick at the beginning of the chart
+                tickValues.push(dayToFirstMs[dayStr]);
+              } else {
+                // Subsequent date ticks exactly at local Berlin midnight (00:00)
+                const midnight = getBerlinMidnight(dayStr);
+                tickValues.push(midnight.getTime());
+              }
+            });
+
+            scale.ticks = tickValues.map(val => ({ value: val }));
           },
           grid: {
             drawOnChartArea: false,
