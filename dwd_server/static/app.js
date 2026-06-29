@@ -2242,6 +2242,54 @@ function renderChartAndTable() {
               month: 'HH:mm'
             }
           },
+          afterBuildTicks: function(scale) {
+            if (!data || !data.labels || data.labels.length === 0) return;
+            const firstMs = new Date(data.labels[0]).getTime();
+            const lastMs = new Date(data.labels[data.labels.length - 1]).getTime();
+
+            const uniqueDays = [];
+            data.labels.forEach(label => {
+              const date = new Date(label);
+              if (isNaN(date.getTime())) return;
+              const dayStr = date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD"
+              if (!uniqueDays.includes(dayStr)) {
+                uniqueDays.push(dayStr);
+              }
+            });
+
+            const tickValues = new Set();
+            // Always include the first data point
+            tickValues.add(firstMs);
+
+            uniqueDays.forEach(dayStr => {
+              const midnightDate = getBerlinMidnight(dayStr);
+              const midnight = midnightDate.getTime();
+
+              if (currentViewMode === 'history' || currentViewMode === 'ensemble') {
+                tickValues.add(midnight);
+              } else if (currentViewMode === 'extended') {
+                // 12-hourly ticks aligned to 00:00 and 12:00 local Berlin time
+                tickValues.add(midnight);
+                const noonDate = new Date(midnight);
+                noonDate.setHours(noonDate.getHours() + 12);
+                tickValues.add(noonDate.getTime());
+              } else if (currentViewMode === 'near') {
+                // 6-hourly ticks aligned to 00:00, 06:00, 12:00, 18:00 local Berlin time
+                tickValues.add(midnight);
+                for (let h of [6, 12, 18]) {
+                  const hourDate = new Date(midnight);
+                  hourDate.setHours(hourDate.getHours() + h);
+                  tickValues.add(hourDate.getTime());
+                }
+              }
+            });
+
+            const sortedTicks = Array.from(tickValues)
+              .filter(val => val >= firstMs && val <= lastMs)
+              .sort((a, b) => a - b);
+
+            scale.ticks = sortedTicks.map(val => ({ value: val }));
+          },
           grid: {
             color: 'rgba(255, 255, 255, 0.08)',
             tickColor: 'rgba(255, 255, 255, 0.25)',
@@ -2256,6 +2304,7 @@ function renderChartAndTable() {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
             align: 'inner',
+            autoSkip: false,
             maxTicksLimit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 15 : 20,
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
