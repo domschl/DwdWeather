@@ -2225,16 +2225,16 @@ function renderChartAndTable() {
         }
       },
       scales: {
-        x: (currentViewMode === 'near' || currentViewMode === 'history' || currentViewMode === 'ensemble') ? {
+        x: {
           type: 'time',
           time: {
             unit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 'day' : 'hour',
-            stepSize: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 1 : 6,
+            stepSize: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 1 : (currentViewMode === 'extended' ? 12 : 6),
             displayFormats: {
-              hour: 'EEE HH:mm',
-              day: 'EEE dd/MM',
-              week: 'EEE dd/MM',
-              month: 'MMM yyyy'
+              hour: 'HH:mm',
+              day: 'HH:mm',
+              week: 'HH:mm',
+              month: 'HH:mm'
             }
           },
           grid: {
@@ -2250,7 +2250,7 @@ function renderChartAndTable() {
           ticks: {
             color: '#8f9cae',
             font: { family: 'Outfit', size: 10 },
-            maxTicksLimit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 15 : 12,
+            maxTicksLimit: (currentViewMode === 'history' || currentViewMode === 'ensemble') ? 15 : 20,
             callback: function(value, index, ticks) {
               const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
               const date = new Date(tickVal);
@@ -2258,37 +2258,45 @@ function renderChartAndTable() {
               if (currentViewMode === 'history' || currentViewMode === 'ensemble') {
                 return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' });
               }
-              const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
-              const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-              return `${weekday} ${time}`;
+              return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
             }
           }
-        } : {
-          type: 'category',
+        },
+        x2: {
+          type: 'time',
+          position: 'bottom',
+          time: {
+            unit: 'day',
+            stepSize: 1,
+            displayFormats: {
+              day: 'EEE dd.'
+            }
+          },
           grid: {
+            drawOnChartArea: false,
             color: 'rgba(255, 255, 255, 0.08)',
             tickColor: 'rgba(255, 255, 255, 0.25)',
-            drawTicks: true,
-            offset: false
+            drawTicks: true
           },
           border: {
-            color: 'rgba(255, 255, 255, 0.15)',
-            display: true
+            display: false
           },
           ticks: {
             color: '#8f9cae',
-            font: { family: 'Outfit', size: 10 },
-            maxTicksLimit: 20,
+            font: { family: 'Outfit', size: 10, weight: 'bold' },
             callback: function(value, index, ticks) {
-              const labelStr = data.labels[index];
-              if (!labelStr) return '';
-              const date = new Date(labelStr);
-              if (isNaN(date.getTime())) return labelStr;
-              const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', timeZone: 'Europe/Berlin' }).replace(',', '');
-              const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
-              return `${day} ${time}:00`;
+              const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
+              const date = new Date(tickVal);
+              if (isNaN(date.getTime())) return value;
+              if (currentViewMode === 'near' || currentViewMode === 'extended') {
+                const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
+                const day = date.toLocaleDateString('en-GB', { day: '2-digit', timeZone: 'Europe/Berlin' });
+                return `${weekday} ${day}.`;
+              }
+              return '';
             }
-          }
+          },
+          display: (currentViewMode === 'near' || currentViewMode === 'extended')
         },
         'y-temp': {
           type: 'linear',
