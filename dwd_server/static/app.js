@@ -2169,47 +2169,51 @@ function renderChartAndTable() {
               return '';
             },
             label: function(context) {
-              let label = context.dataset.label || '';
+              const origLabel = context.dataset.label || '';
+              // Remove parenthesized unit from the label to avoid duplicate/sync issues in tooltip
+              const cleanLabel = origLabel.replace(/\s*\([^)]+\)/g, '').trim();
+              let label = cleanLabel;
               if (label) {
                 label += ': ';
               }
               const val = context.parsed.y;
               if (val !== null && val !== undefined) {
-                if (label.includes('Temp')) {
-                  label += val.toFixed(1) + ' °C';
-                } else if (label.includes('Precip') || label.includes('Rain Amount')) {
-                  label += val.toFixed(1) + ' mm';
-                } else if (label.includes('Humidity') || label.includes('Prob')) {
+                // Check probability and humidity first because they might contain other keywords (e.g. 'Precipitation Prob (%)' contains 'Precip' and must show '%')
+                if (origLabel.includes('Humidity') || origLabel.includes('Prob')) {
                   label += Math.round(val) + ' %';
-                } else if (label.includes('Duration')) {
+                } else if (origLabel.includes('Temp')) {
+                  label += val.toFixed(1) + ' °C';
+                } else if (origLabel.includes('Precip') || origLabel.includes('Rain Amount')) {
+                  label += val.toFixed(1) + ' mm';
+                } else if (origLabel.includes('Duration')) {
                   label += Math.round(val) + ' min';
-                } else if (label.includes('Luminosity')) {
+                } else if (origLabel.includes('Luminosity')) {
                   label += val.toFixed(1) + ' lx';
-                } else if (label.includes('Rain Sensor')) {
+                } else if (origLabel.includes('Rain Sensor')) {
                   label += val.toFixed(2);
-                } else if (label.includes('Geiger')) {
+                } else if (origLabel.includes('Geiger')) {
                   label += val.toFixed(2) + ' Hz';
-                } else if (label.includes('Gamma')) {
+                } else if (origLabel.includes('Gamma')) {
                   label += val.toFixed(3) + ' μSv/h';
-                } else if (label.includes('Pressure')) {
+                } else if (origLabel.includes('Pressure')) {
                   label += val.toFixed(1) + ' hPa';
-                } else if (label.includes('Magnetic')) {
+                } else if (origLabel.includes('Magnetic')) {
                   label += val.toFixed(1) + ' nT';
-                } else if (label.includes('Kp')) {
+                } else if (origLabel.includes('Kp')) {
                   label += val.toFixed(2);
-                } else if (label.includes('Wind Speed')) {
-                  if (label.includes('MIM')) {
+                } else if (origLabel.includes('Wind Speed')) {
+                  if (origLabel.includes('MIM')) {
                     label += val.toFixed(1) + ' m/s';
                   } else {
                     label += val.toFixed(1) + ' km/s';
                   }
-                } else if (label.includes('Wind Dir')) {
+                } else if (origLabel.includes('Wind Dir')) {
                   label += Math.round(val) + '°';
-                } else if (label.includes('Wind Density')) {
+                } else if (origLabel.includes('Wind Density')) {
                   label += val.toFixed(1) + ' p/cm³';
-                } else if (label.includes('IMF')) {
+                } else if (origLabel.includes('IMF')) {
                   label += val.toFixed(1) + ' nT';
-                } else if (label.includes('Rad')) {
+                } else if (origLabel.includes('Rad')) {
                   label += val.toFixed(1) + ' W/m²';
                 } else {
                   label += val;
