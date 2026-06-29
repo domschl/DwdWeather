@@ -2264,79 +2264,34 @@ function renderChartAndTable() {
               if (currentViewMode === 'history' || currentViewMode === 'ensemble') {
                 return date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: 'Europe/Berlin' });
               }
-              return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+
+              const timeStr = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+              
+              // Only draw stacked dates for 'near' and 'extended' views
+              if (currentViewMode === 'near' || currentViewMode === 'extended') {
+                const dayStr = date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD"
+                
+                let isFirstOfNewDay = false;
+                if (index === 0) {
+                  isFirstOfNewDay = true;
+                } else if (ticks && ticks[index - 1]) {
+                  const prevTickVal = ticks[index - 1].value;
+                  const prevDate = new Date(prevTickVal);
+                  const prevDayStr = prevDate.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' });
+                  if (dayStr !== prevDayStr) {
+                    isFirstOfNewDay = true;
+                  }
+                }
+                
+                if (isFirstOfNewDay) {
+                  const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
+                  const day = date.toLocaleDateString('en-GB', { day: '2-digit', timeZone: 'Europe/Berlin' });
+                  return [timeStr, `${weekday} ${day}.`];
+                }
+              }
+              return timeStr;
             }
           }
-        },
-        x2: {
-          type: 'time',
-          position: 'bottom',
-          min: new Date(data.labels[0]).getTime(),
-          max: new Date(data.labels[data.labels.length - 1]).getTime(),
-          time: {
-            unit: 'day',
-            stepSize: 1,
-            displayFormats: {
-              day: 'EEE dd.'
-            }
-          },
-          afterBuildTicks: function(scale) {
-            if (!data || !data.labels || data.labels.length === 0) return;
-            const uniqueDays = [];
-            const dayToFirstMs = {};
-            data.labels.forEach(label => {
-              const date = new Date(label);
-              if (isNaN(date.getTime())) return;
-              const dayStr = date.toLocaleDateString('en-CA', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD"
-              if (!uniqueDays.includes(dayStr)) {
-                uniqueDays.push(dayStr);
-                dayToFirstMs[dayStr] = date.getTime();
-              }
-            });
-
-            const tickValues = [];
-            uniqueDays.forEach((dayStr, index) => {
-              if (index === 0) {
-                // Today's date tick at the beginning of the chart
-                tickValues.push(dayToFirstMs[dayStr]);
-              } else {
-                // Subsequent date ticks exactly at local Berlin midnight (00:00)
-                const midnight = getBerlinMidnight(dayStr);
-                tickValues.push(midnight.getTime());
-              }
-            });
-
-            // Ensure ticks fall within scale limits to prevent layout overflow/stretching
-            scale.ticks = tickValues
-              .filter(val => val >= scale.min && val <= scale.max)
-              .map(val => ({ value: val }));
-          },
-          grid: {
-            drawOnChartArea: false,
-            color: 'rgba(255, 255, 255, 0.08)',
-            tickColor: 'rgba(255, 255, 255, 0.25)',
-            drawTicks: true
-          },
-          border: {
-            display: false
-          },
-          ticks: {
-            color: '#8f9cae',
-            font: { family: 'Outfit', size: 10, weight: 'bold' },
-            align: 'inner',
-            callback: function(value, index, ticks) {
-              const tickVal = (ticks && ticks[index] && typeof ticks[index].value === 'number') ? ticks[index].value : value;
-              const date = new Date(tickVal);
-              if (isNaN(date.getTime())) return value;
-              if (currentViewMode === 'near' || currentViewMode === 'extended') {
-                const weekday = date.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'Europe/Berlin' });
-                const day = date.toLocaleDateString('en-GB', { day: '2-digit', timeZone: 'Europe/Berlin' });
-                return `${weekday} ${day}.`;
-              }
-              return '';
-            }
-          },
-          display: (currentViewMode === 'near' || currentViewMode === 'extended')
         },
         'y-temp': {
           type: 'linear',
