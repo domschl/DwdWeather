@@ -1119,7 +1119,7 @@ tbody tr:hover {
 
 .hiking-days-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 0.5rem;
 }
 
@@ -1150,9 +1150,16 @@ tbody tr:hover {
 .day-tier {
   font-size: 0.72rem;
   font-weight: 600;
-  text-transform: capitalize;
-  padding: 0.1rem 0.4rem;
+  white-space: nowrap;
+  padding: 0.12rem 0.45rem;
   border-radius: 999px;
+}
+
+.day-tier-sub {
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: capitalize;
+  line-height: 1.1;
 }
 
 .tier-none { color: var(--text-disabled); }
@@ -1160,6 +1167,11 @@ tbody tr:hover {
 .tier-medium { background: rgba(148, 158, 144, 0.25); color: #d6dfd2; }
 .tier-good { background: rgba(74, 222, 128, 0.2); color: #86efac; }
 .tier-excellent { background: rgba(0, 230, 118, 0.22); color: #4ade80; }
+
+.tier-text-basic { color: #94a3b8; }
+.tier-text-medium { color: #b8c2b4; }
+.tier-text-good { color: #86efac; }
+.tier-text-excellent { color: #4ade80; }
 
 .day-pill-temp {
   color: var(--text-primary);

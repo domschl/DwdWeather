@@ -637,8 +637,8 @@ function renderHikingCards() {
               : '';
         const tierBadge =
           d.bestTier === 'none'
-            ? `<span class="day-tier tier-none">—</span>`
-            : `<span class="day-tier tier-${d.bestTier}" title="${escapeAttr(d.bestRange)}">${d.bestHours}h · ${d.bestTier}</span>`;
+            ? `<span class="day-tier tier-none">—</span><div class="day-tier-sub tier-none">&nbsp;</div>`
+            : `<span class="day-tier tier-${d.bestTier}" title="${d.bestHours}h · ${escapeAttr(d.bestTier)}">${escapeHtml(d.bestRange)}</span><div class="day-tier-sub tier-text-${d.bestTier}">${escapeHtml(d.bestTier)}</div>`;
         return `
           <div class="hiking-day-pill tier-border-${d.bestTier}">
             <div class="day-pill-date">${escapeHtml(d.label)}</div>
