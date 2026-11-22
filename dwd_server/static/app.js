@@ -393,7 +393,7 @@ function updateDashboard() {
   renderChartAndTable();
 }
 
-// Switch between Near-term (48h detailed), Extended (10d downsampled), Ensemble, or History
+// Switch between Near-term (48h detailed), Extended (10d downsampled), Ensemble, History, or Hiking
 function switchViewMode(mode) {
   currentViewMode = mode;
   
@@ -402,8 +402,29 @@ function switchViewMode(mode) {
   document.getElementById('btn-tab-extended').classList.toggle('active', mode === 'extended');
   document.getElementById('btn-tab-ensemble').classList.toggle('active', mode === 'ensemble');
   document.getElementById('btn-tab-history').classList.toggle('active', mode === 'history');
+  const hikingTab = document.getElementById('btn-tab-hiking');
+  if (hikingTab) hikingTab.classList.toggle('active', mode === 'hiking');
   
   const historyControls = document.getElementById('history-controls');
+  const mainChartWrapper = document.getElementById('main-chart-wrapper');
+  const tableContainer = document.getElementById('card-table-container');
+  const hikingView = document.getElementById('hiking-view');
+
+  if (mode === 'hiking') {
+    historyControls.style.display = 'none';
+    if (mainChartWrapper) mainChartWrapper.style.display = 'none';
+    if (tableContainer) tableContainer.style.display = 'none';
+    if (hikingView) hikingView.style.display = 'block';
+    if (typeof loadHikingView === 'function') {
+      loadHikingView();
+    }
+    return;
+  }
+
+  if (mainChartWrapper) mainChartWrapper.style.display = '';
+  if (tableContainer) tableContainer.style.display = '';
+  if (hikingView) hikingView.style.display = 'none';
+
   if (mode === 'history') {
     historyControls.style.display = 'flex';
     const startInput = document.getElementById('history-start');

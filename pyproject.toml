@@ -1,6 +1,6 @@
 [project]
 name = "dwdweather"
-version = "0.3.10"
+dynamic = ["version"]
 description = "Modern DWD Weather Server and Dashboard"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,9 @@ dwd-server = "dwd_server.main:run"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "dwd_server/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["dwd_server"]

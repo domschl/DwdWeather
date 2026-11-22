@@ -7,10 +7,12 @@ import urllib.request
 from pydantic import BaseModel
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from dwd_server import __version__
 from dwd_server.config import load_config, AppConfig
 from dwd_server.parser import fetch_and_parse, WeatherForecast
 from dwd_server.mqtt_client import MQTTManager
@@ -18,6 +20,7 @@ from dwd_server.database import Database
 from dwd_server.noaa import fetch_and_store_space_weather
 from dwd_server.mim import fetch_and_store_mim_weather
 from dwd_server.scheduler import BackgroundScheduler, ScheduledTask
+from dwd_server.hiking import HikingManager
 
 # Set up logging
 logging.basicConfig(
@@ -33,6 +36,11 @@ db = Database(config.database_path)
 # Cache structures
 CACHE_DIR = Path(config.cache_dir)
 CACHE_FILE = CACHE_DIR / "weather_cache.json"
+
+hiking_manager = HikingManager(
+    cache_dir=CACHE_DIR,
+    default_stations=config.hiking_stations,
+)
 
 mqtt_manager: MQTTManager | None = None
 mqtt_manager_indoor: MQTTManager | None = None
@@ -59,7 +67,7 @@ if config.mqtt_host:
 app = FastAPI(
     title="Modern DWD Weather Hub",
     description="Streamlined and modernized German Weather Service (DWD) forecast server",
-    version="1.0.0"
+    version=__version__
 )
 
 # Enable CORS for development ease
@@ -567,6 +575,7 @@ def get_status() -> dict[str, Any]:
 @app.get("/api/config")
 def get_current_config() -> dict[str, Any]:
     return {
+        "version": __version__,
         "station_id": config.station_id,
         "cache_expiry_secs": config.cache_expiry_secs,
         "forecast_min_interval_secs": FORECAST_MIN_INTERVAL_SECS,
@@ -578,10 +587,62 @@ def get_current_config() -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# Hiking Conditions Endpoints
+# ---------------------------------------------------------------------------
+class HikingLocationRequest(BaseModel):
+    station_id: str
+    label: str = ""
+
+
+@app.get("/api/hiking/stations/search")
+def search_hiking_stations(q: str = "", limit: int = 20) -> dict[str, Any]:
+    capped_limit = max(1, min(limit, 50))
+    return {"results": hiking_manager.search_stations(q, limit=capped_limit)}
+
+
+@app.get("/api/hiking/locations")
+def get_hiking_locations() -> dict[str, Any]:
+    return {"locations": hiking_manager.get_all_locations_data(force_refresh=False)}
+
+
+@app.post("/api/hiking/locations")
+def add_hiking_location(req: HikingLocationRequest) -> dict[str, Any]:
+    try:
+        loc = hiking_manager.add_location(req.station_id, req.label)
+        return {"location": loc}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@app.delete("/api/hiking/locations/{station_id}")
+def delete_hiking_location(station_id: str) -> dict[str, Any]:
+    removed = hiking_manager.remove_location(station_id)
+    if not removed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Hiking location '{station_id}' not found.",
+        )
+    return {"status": "removed", "station_id": station_id}
+
+
+@app.post("/api/hiking/refresh")
+def refresh_hiking_locations() -> dict[str, Any]:
+    return {"locations": hiking_manager.get_all_locations_data(force_refresh=True)}
+
+
 # Ensure static files directory exists before mounting
 static_dir = Path(__file__).parent / "static"
 if not static_dir.exists():
     static_dir.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/", response_class=HTMLResponse)
+def serve_index() -> HTMLResponse:
+    index_path = static_dir / "index.html"
+    html = index_path.read_text(encoding="utf-8").replace("__VERSION__", __version__)
+    return HTMLResponse(content=html)
+
 
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 

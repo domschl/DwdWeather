@@ -99,7 +99,7 @@ def fetch_and_parse(station_id: str) -> WeatherForecast | None:
                     pass
 
     # Parse Forecast Elements
-    elements_of_interest = {'TTT', 'SunD1', 'wwP', 'DRR1', 'RR1c'}
+    elements_of_interest = {'TTT', 'SunD1', 'wwP', 'DRR1', 'RR1c', 'R101', 'RRS1c'}
     elements_data: dict[str, list[float | None]] = {}
 
     ext_data = placemark.find('kml:ExtendedData', namespaces)

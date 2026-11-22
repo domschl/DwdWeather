@@ -27,6 +27,11 @@ class AppConfig(BaseModel):
     ]
     cache_dir: str = "cache"
     database_path: str = "cache/dwdweather.db"
+    hiking_stations: list[dict[str, str]] = [
+        {"station_id": "P966", "label": "Obere Firstalm / Schliersee"},
+        {"station_id": "P965", "label": "Miesbach"},
+        {"station_id": "P0159", "label": "Gmund / Tegernsee"},
+    ]
 
 def load_config() -> AppConfig:
     # 1. Start with defaults
@@ -63,6 +68,18 @@ def load_config() -> AppConfig:
                         config.cache_dir = str(data["cache_dir"])
                     if "database_path" in data:
                         config.database_path = str(data["database_path"])
+                    if "hiking_stations" in data and isinstance(data["hiking_stations"], list):
+                        parsed_hiking: list[dict[str, str]] = []
+                        for item in data["hiking_stations"]:
+                            if isinstance(item, dict) and item.get("station_id"):
+                                parsed_hiking.append({
+                                    "station_id": str(item["station_id"]).strip(),
+                                    "label": str(item.get("label", "")).strip(),
+                                })
+                            elif isinstance(item, str) and item.strip():
+                                parsed_hiking.append({"station_id": item.strip(), "label": ""})
+                        if parsed_hiking:
+                            config.hiking_stations = parsed_hiking
             except Exception as e:
                 print(f"Warning: Failed to load config from {path}: {e}")
 

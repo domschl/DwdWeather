@@ -838,3 +838,339 @@ tbody tr:hover {
   border-top: 1px solid var(--border-color);
   margin-top: 0.25rem;
 }
+
+
+/* =========================================================================
+   Hiking Conditions View
+   ========================================================================= */
+.hiking-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.hiking-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.hiking-search-wrapper {
+  position: relative;
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+.hiking-search-input-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.hiking-input {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.hiking-input:focus {
+  border-color: var(--primary-color);
+}
+
+.btn-sm {
+  padding: 0.55rem 0.95rem;
+  font-size: 0.85rem;
+  border-radius: 8px;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hiking-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  z-index: 50;
+}
+
+.hiking-search-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.88rem;
+}
+
+.hiking-search-item:hover {
+  background: rgba(99, 102, 241, 0.22);
+}
+
+.hiking-search-item .hs-id {
+  font-weight: 600;
+  color: #818cf8;
+  min-width: 52px;
+}
+
+.hiking-search-item .hs-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.hiking-search-item .hs-elev {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.hiking-search-empty {
+  padding: 0.75rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.hiking-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hiking-window-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.hiking-select {
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.hiking-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.hiking-legend-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hiking-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  height: 10px;
+  border-radius: 4px;
+}
+
+.swatch-none {
+  width: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+}
+
+.swatch-basic {
+  width: 22px;
+  height: 7px;
+  background: #64748b;
+}
+
+.swatch-gradient {
+  width: 68px;
+  background: linear-gradient(90deg, #949e90 0%, #4ade80 55%, #00e676 100%);
+}
+
+.hiking-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.hiking-placeholder {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.hiking-location-card {
+  background: rgba(15, 20, 34, 0.65);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hiking-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.hiking-card-title h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hiking-station-meta {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.hiking-card-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hiking-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.hiking-chip.chip-days {
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #86efac;
+}
+
+.hiking-chip.chip-snow {
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #bae6fd;
+}
+
+.hiking-remove-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.hiking-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.28);
+}
+
+.hiking-chart-wrapper {
+  position: relative;
+  height: 250px;
+  width: 100%;
+}
+
+.hiking-days-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 0.5rem;
+}
+
+.hiking-day-pill {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-top-width: 3px;
+  border-radius: 8px;
+  padding: 0.45rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.76rem;
+}
+
+.tier-border-none { border-top-color: rgba(255, 255, 255, 0.1); }
+.tier-border-basic { border-top-color: #64748b; }
+.tier-border-medium { border-top-color: #949e90; }
+.tier-border-good { border-top-color: #4ade80; }
+.tier-border-excellent { border-top-color: #00e676; }
+
+.day-pill-date {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.day-tier {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+}
+
+.tier-none { color: var(--text-disabled); }
+.tier-basic { background: rgba(100, 116, 139, 0.25); color: #cbd5e1; }
+.tier-medium { background: rgba(148, 158, 144, 0.25); color: #d6dfd2; }
+.tier-good { background: rgba(74, 222, 128, 0.2); color: #86efac; }
+.tier-excellent { background: rgba(0, 230, 118, 0.22); color: #4ade80; }
+
+.day-pill-temp {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.day-pill-snow {
+  color: #7dd3fc;
+  font-size: 0.72rem;
+}
+
+.day-pill-snow.muted {
+  color: var(--text-disabled);
+}

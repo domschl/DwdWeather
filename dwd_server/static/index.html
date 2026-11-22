@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=0.3.10">
-  <link rel="icon" type="image/png" href="favicon.png?v=0.3.10">
+  <link rel="stylesheet" href="style.css?v=__VERSION__">
+  <link rel="icon" type="image/png" href="favicon.png?v=__VERSION__">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
@@ -186,6 +186,9 @@
             <button id="btn-tab-history" class="tab-btn" onclick="switchViewMode('history')">
               Historical Comparison
             </button>
+            <button id="btn-tab-hiking" class="tab-btn" onclick="switchViewMode('hiking')">
+              🥾 Hiking Conditions
+            </button>
           </div>
         </div>
 
@@ -213,8 +216,56 @@
         </div>
 
         <!-- Chart Area -->
-        <div class="chart-wrapper">
+        <div class="chart-wrapper" id="main-chart-wrapper">
           <canvas id="weatherChart"></canvas>
+        </div>
+
+        <!-- Hiking Conditions View (visible only in Hiking mode) -->
+        <div class="hiking-view" id="hiking-view" style="display: none;">
+          <div class="hiking-toolbar">
+            <div class="hiking-search-wrapper">
+              <div class="hiking-search-input-group">
+                <input
+                  type="text"
+                  id="hiking-station-search"
+                  class="hiking-input"
+                  placeholder="Add DWD station by name or ID (e.g. Garmisch, Zugspitze, P966)..."
+                  autocomplete="off"
+                >
+                <button id="btn-hiking-add" class="btn btn-primary btn-sm" onclick="addHikingStationFromInput()">
+                  + Add
+                </button>
+              </div>
+              <div id="hiking-search-results" class="hiking-search-dropdown" style="display: none;"></div>
+            </div>
+
+            <div class="hiking-controls-right">
+              <label class="hiking-window-label" for="hiking-min-hours">
+                Min window:
+                <select id="hiking-min-hours" class="hiking-select" onchange="onHikingMinHoursChange()">
+                  <option value="4">4h</option>
+                  <option value="5">5h</option>
+                  <option value="6" selected>6h</option>
+                  <option value="7">7h</option>
+                  <option value="8">8h</option>
+                </select>
+              </label>
+              <button id="btn-hiking-refresh" class="btn btn-secondary btn-sm" onclick="refreshHikingData()">
+                🔄 Refresh Locations
+              </button>
+            </div>
+          </div>
+
+          <div class="hiking-legend">
+            <span class="hiking-legend-title">Hiking Opportunity Bar (daytime ≥<span id="hiking-legend-hours">6</span>h window):</span>
+            <span class="hiking-legend-item"><span class="legend-swatch swatch-none"></span>Night / Precip</span>
+            <span class="hiking-legend-item"><span class="legend-swatch swatch-basic"></span>Basic (slight precip)</span>
+            <span class="hiking-legend-item"><span class="legend-swatch swatch-gradient"></span>Dry: Medium (grey) → Good (50% sun) → Excellent (85%+ sun)</span>
+          </div>
+
+          <div id="hiking-cards-container" class="hiking-cards-container">
+            <div class="hiking-placeholder">Loading hiking locations...</div>
+          </div>
         </div>
       </section>
 
@@ -256,6 +307,7 @@
     </footer>
   </div>
 
-  <script src="app.js?v=0.3.10"></script>
+  <script src="hiking.js?v=__VERSION__"></script>
+  <script src="app.js?v=__VERSION__"></script>
 </body>
 </html>
